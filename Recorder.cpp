@@ -205,7 +205,7 @@ static int init_filters(const char *filters_descr)
     ret = avfilter_graph_create_filter(&buffersrc_ctx, buffersrc, "in",  
                                        args, NULL, filter_graph);  
     if (ret < 0) {  
-        printf("Cannot create buffer source\n");  
+        av_log(NULL,AV_LOG_ERROR,"Cannot create buffer source\n");  
         return ret;  
     }  
   
@@ -216,7 +216,7 @@ static int init_filters(const char *filters_descr)
                                        NULL, buffersink_params, filter_graph);  
     av_free(buffersink_params);  
     if (ret < 0) {  
-        printf("Cannot create buffer sink\n");  
+        av_log(NULL,AV_LOG_ERROR,"Cannot create buffer sink\n");  
         return ret;  
     }  
   
@@ -266,19 +266,19 @@ int OpenVideoCapture(const char* psDevName,AVInputFormat *ifmt)
 	if(avformat_open_input(&pFormatCtx_Video, psDevName, ifmt, &options)!=0)
 		//if(avformat_open_input(&pFormatCtx_Video, psDevName, ifmt, NULL)!=0)
 	{
-		printf("Couldn't open input stream.（无法打开视频输入流）\n");
+		av_log(NULL,AV_LOG_ERROR,"Couldn't open input stream.（无法打开视频输入流）\n");
 		return -1;
 	}
 	pFormatCtx_Video->streams[0]->codec->time_base.num = 1;
 	pFormatCtx_Video->streams[0]->codec->time_base.den = FPS;
 	if(avformat_find_stream_info(pFormatCtx_Video,NULL)<0)
 	{
-		printf("Couldn't find stream information.（无法获取视频流信息）\n");
+		av_log(NULL,AV_LOG_ERROR,"Couldn't find stream information.（无法获取视频流信息）\n");
 		return -2;
 	}
 	if (pFormatCtx_Video->streams[0]->codec->codec_type != AVMEDIA_TYPE_VIDEO)
 	{
-		printf("Couldn't find video stream information.（无法获取视频流信息）\n");
+		av_log(NULL,AV_LOG_ERROR,"Couldn't find video stream information.（无法获取视频流信息）\n");
 		return -3;
 	}
 	pCodecCtx_Video = pFormatCtx_Video->streams[0]->codec;
@@ -287,12 +287,12 @@ int OpenVideoCapture(const char* psDevName,AVInputFormat *ifmt)
 	pCodec_Video = avcodec_find_decoder(pCodecCtx_Video->codec_id);
 	if(pCodec_Video == NULL)
 	{
-		printf("Codec not found.（没有找到解码器）\n");
+		av_log(NULL,AV_LOG_ERROR,"Codec not found.（没有找到解码器）\n");
 		return -4;
 	}
 	if(avcodec_open2(pCodecCtx_Video, pCodec_Video, NULL) < 0)
 	{
-		printf("Could not open codec.（无法打开解码器）\n");
+		av_log(NULL,AV_LOG_ERROR,"Could not open codec.（无法打开解码器）\n");
 		return -5;
 	}
 
@@ -323,29 +323,29 @@ int OpenVideoCaptureDesktop()
 	//av_dict_set(&options,"video_size","320x240",0);
 	if(avformat_open_input(&pFormatCtx_Video, "desktop", ifmt, &options)!=0)
 	{
-		printf("Couldn't open input stream.（无法打开视频输入流）\n");
+		av_log(NULL,AV_LOG_ERROR,"Couldn't open input stream.（无法打开视频输入流）\n");
 		return -1;
 	}
 	if(avformat_find_stream_info(pFormatCtx_Video,NULL)<0)
 	{
-		printf("Couldn't find stream information.（无法获取视频流信息）\n");
+		av_log(NULL,AV_LOG_ERROR,"Couldn't find stream information.（无法获取视频流信息）\n");
 		return -1;
 	}
 	if (pFormatCtx_Video->streams[0]->codec->codec_type != AVMEDIA_TYPE_VIDEO)
 	{
-		printf("Couldn't find video stream information.（无法获取视频流信息）\n");
+		av_log(NULL,AV_LOG_ERROR,"Couldn't find video stream information.（无法获取视频流信息）\n");
 		return -1;
 	}
 	pCodecCtx_Video = pFormatCtx_Video->streams[0]->codec;
 	pCodec_Video = avcodec_find_decoder(pCodecCtx_Video->codec_id);
 	if(pCodec_Video == NULL)
 	{
-		printf("Codec not found.（没有找到解码器）\n");
+		av_log(NULL,AV_LOG_ERROR,"Codec not found.（没有找到解码器）\n");
 		return -1;
 	}
 	if(avcodec_open2(pCodecCtx_Video, pCodec_Video, NULL) < 0)
 	{
-		printf("Could not open codec.（无法打开解码器）\n");
+		av_log(NULL,AV_LOG_ERROR,"Could not open codec.（无法打开解码器）\n");
 		return -1;
 	}
 
@@ -359,7 +359,7 @@ int OpenVideoCaptureDesktop()
 	fifo_video = av_fifo_alloc(30 * avpicture_get_size(AV_PIX_FMT_YUV420P, pCodecCtx_Video->width, pCodecCtx_Video->height));
 	if(fifo_video == NULL)
 	{
-		printf("alloc pic fifo failed\r\n");
+		av_log(NULL,AV_LOG_ERROR,"alloc pic fifo failed\r\n");
 		return -1;
 	}
 	return 0;
@@ -376,7 +376,7 @@ int OpenAudioCapture(const char * psDevName, AVInputFormat *ifmt)
 	//char * psDevName = dup_wchar_to_utf8(L"audio=麦克风 (2- USB Audio Device)");
 	if (avformat_open_input(&pFormatCtx_Audio, psDevName, ifmt,NULL) < 0)
 	{
-		printf("Couldn't open input stream.（无法打开音频输入流）\n");
+		av_log(NULL,AV_LOG_ERROR,"Couldn't open input stream.（无法打开音频输入流）\n");
 		return -1;
 	}
 
@@ -385,14 +385,14 @@ int OpenAudioCapture(const char * psDevName, AVInputFormat *ifmt)
 	
 	if(pFormatCtx_Audio->streams[0]->codec->codec_type != AVMEDIA_TYPE_AUDIO)
 	{
-		printf("Couldn't find video stream information.（无法获取音频流信息）\n");
+		av_log(NULL,AV_LOG_ERROR,"Couldn't find video stream information.（无法获取音频流信息）\n");
 		return -3;
 	}
 
 	AVCodec *tmpCodec = avcodec_find_decoder(pFormatCtx_Audio->streams[0]->codec->codec_id);
 	if(0 > avcodec_open2(pFormatCtx_Audio->streams[0]->codec, tmpCodec, NULL))
 	{
-		printf("can not find or open audio decoder!\n");
+		av_log(NULL,AV_LOG_ERROR,"can not find or open audio decoder!\n");
 		return -4;
 	}
 
@@ -454,7 +454,7 @@ int OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioInfo* pAudioI
 	AVStream *pVideoStream = NULL, *pAudioStream = NULL;
 	if(pFormatCtx_Video == NULL || pFormatCtx_Audio == NULL)
 	{
-		printf("please opendevices first\r\n");
+		av_log(NULL,AV_LOG_ERROR,"please opendevices first\r\n");
 		return -1;
 	}
 	//为输出文件分配FormatContext
@@ -468,7 +468,7 @@ int OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioInfo* pAudioI
 
 		if (!pVideoStream)
 		{
-			printf("can not new video stream for output!\n");
+			av_log(NULL,AV_LOG_ERROR,"can not new video stream for output!\n");
 			avformat_free_context(pFormatCtx_Out);
 			return -2;
 		}
@@ -489,7 +489,7 @@ int OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioInfo* pAudioI
 		//open encoder
 		if (!pVideoStream->codec->codec)
 		{
-			printf("can not find the encoder!\n");
+			av_log(NULL,AV_LOG_ERROR,"can not find the encoder!\n");
 			return -3;
 		}
 
@@ -503,8 +503,8 @@ int OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioInfo* pAudioI
 		//可查看ff_mpeg4_encoder中指定的第一个像素格式，这个是采用MPEG4编码的时候，输入视频帧的像素格式，这里是YUV420P
 		pVideoStream->codec->pix_fmt = pFormatCtx_Out->streams[VideoIndex]->codec->codec->pix_fmts[0]; //像素格式，采用MPEG4支持的第一个格式
 		
-		//CBR_Set(pVideoStream->codec, pVideoInfo->bitrate); //设置固定码率
-		VBR_Set(pVideoStream->codec, pVideoInfo->bitrate, 2*pVideoInfo->bitrate  , pVideoInfo->bitrate/2);
+		CBR_Set(pVideoStream->codec, pVideoInfo->bitrate); //设置固定码率
+		//VBR_Set(pVideoStream->codec, pVideoInfo->bitrate, 2*pVideoInfo->bitrate  , pVideoInfo->bitrate/2);
 		
 		if (pFormatCtx_Out->oformat->flags & AVFMT_GLOBALHEADER)
 			pVideoStream->codec->flags |= CODEC_FLAG_GLOBAL_HEADER;
@@ -519,10 +519,10 @@ int OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioInfo* pAudioI
         pVideoStream->codec->qcompress = 0.6;
 #endif
 		//pVideoStream->rc_lookahead=0;//这样就不会延迟编码器的输出了
-		av_opt_set(pVideoStream->codec->priv_data, "preset", "slow", 0);
+		//av_opt_set(pVideoStream->codec->priv_data, "preset", "slow", 0);
 		if ((avcodec_open2(pVideoStream->codec, pVideoStream->codec->codec, &options)) < 0)
 		{
-			printf("can not open the encoder\n");
+			av_log(NULL,AV_LOG_ERROR,"can not open the encoder\n");
 			return -4;
 		}
 	}
@@ -534,6 +534,8 @@ int OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioInfo* pAudioI
 		pAudioStream = avformat_new_stream(pFormatCtx_Out, NULL);
 		//在avformat_alloc_output_context2 中就找到了 pFormatCtx_Out->oformat。根据文件的后缀，匹配到了AVOutputFormat ff_mp4_muxer
 		//    .audio_codec       = AV_CODEC_ID_AAC 
+		
+		//pAudioStream->codec->codec = avcodec_find_encoder(AV_CODEC_ID_AAC);
 		pAudioStream->codec->codec = avcodec_find_encoder(pFormatCtx_Out->oformat->audio_codec);
 
 		pOutputCodecCtx = pAudioStream->codec;
@@ -558,7 +560,7 @@ int OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioInfo* pAudioI
 		if (avcodec_open2(pOutputCodecCtx, pOutputCodecCtx->codec, 0) < 0)
 		{
 			//编码器打开失败，退出程序
-			printf("can not open output codec!\n");
+			av_log(NULL,AV_LOG_ERROR,"can not open output codec!\n");
 			return -5;
 		}
 	}
@@ -567,16 +569,19 @@ int OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioInfo* pAudioI
 	{
 		if(avio_open(&pFormatCtx_Out->pb, outFileName, AVIO_FLAG_WRITE) < 0)
 		{
-			printf("can not open output file handle!\n");
+			av_log(NULL,AV_LOG_ERROR,"can not open output file handle!\n");
 			return -6;
 		}
 	}
 	//写入文件头
 	if(avformat_write_header(pFormatCtx_Out, NULL) < 0)
 	{
-		printf("can not write the header of the output file!\n");
+		av_log(NULL,AV_LOG_ERROR,"can not write the header of the output file!\n");
 		return -7;
 	}
+	//AVRational time_base={1, pAudioStream->codec->sample_rate};
+	//pAudioStream->time_base = time_base;
+	pVideoStream->codec->time_base = pFormatCtx_Video->streams[0]->codec->time_base;
 	//按输出的录像视频分辨率大小和编码输入格式分配一个AVFrame，并且填充对应的数据区。
 	pEncFrame  = av_frame_alloc();
 	//用于录像的一帧视频的大小
@@ -601,7 +606,7 @@ int OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioInfo* pAudioI
 	fifo_video = av_fifo_alloc(30 * frame_size);
 	if(fifo_video == NULL)
 	{
-		printf("alloc pic fifo failed\r\n");
+		av_log(NULL,AV_LOG_ERROR,"alloc pic fifo failed\r\n");
 		return -8;
 	}
 
@@ -714,7 +719,7 @@ static int push_filter(AVFrame	*pFrame,AVFrame* pFilterFrame)
     }
 #if 0
     if (av_buffersrc_add_frame(buffersrc_ctx, pFrame) < 0) {
-        printf( "Error while feeding the filtergraph\n");
+        av_log(NULL,AV_LOG_ERROR,( "Error while feeding the filtergraph\n");
         return NULL;
     }
 #endif
@@ -822,7 +827,7 @@ DWORD WINAPI VideoCapThreadProc( LPVOID lpParam )
 			//解码视频流 
 			if (avcodec_decode_video2(pCodecCtx_Video, pFrame, &got_picture, &packet) < 0)
 			{
-				printf("Decode Error.\n");
+				av_log(NULL,AV_LOG_ERROR,"Decode Error.\n");
 				continue;
 			}
 			if (got_picture)
@@ -930,7 +935,7 @@ DWORD WINAPI VideoCapThreadProc( LPVOID lpParam )
 	}
 	videoThreadQuit = 1;
 	
-	printf("video thread exit\r\n");
+	av_log(NULL,AV_LOG_INFO,"video thread exit\r\n");
 	return 0;
 }
 
@@ -958,7 +963,7 @@ DWORD WINAPI AudioCapThreadProc( LPVOID lpParam )
 		{
 			//解码失败后，退出了线程，这里需要修复
 			av_frame_free(&frame);
-			printf("can not decoder a frame");
+			av_log(NULL,AV_LOG_ERROR,"can not decoder a frame");
 			break;
 		}
 		av_free_packet(&pkt);
@@ -978,6 +983,10 @@ DWORD WINAPI AudioCapThreadProc( LPVOID lpParam )
 			int buf_space = av_audio_fifo_space(fifo_audio);
 			if (av_audio_fifo_space(fifo_audio) >= frame->nb_samples)
 			{
+
+				av_log(NULL,AV_LOG_PANIC,"************write audio fifo\r\n");
+			
+
 				//音频数据入录像队列.
 				EnterCriticalSection(&AudioSection);
 				av_audio_fifo_write(fifo_audio, (void **)frame->data, frame->nb_samples);
@@ -990,7 +999,7 @@ DWORD WINAPI AudioCapThreadProc( LPVOID lpParam )
 	}
 	av_frame_free(&frame);
 	audioThreadQuit = 1;
-	printf("video thread exit\r\n");
+	av_log(NULL,AV_LOG_ERROR,"video thread exit\r\n");
 
 	return 0;
 }
@@ -1019,6 +1028,7 @@ DWORD WINAPI RecordThreadProc( LPVOID lpParam )
 		if(_av_compare_ts(cur_pts_v, pFormatCtx_Out->streams[VideoIndex]->time_base, 
 			cur_pts_a,pFormatCtx_Out->streams[AudioIndex]->time_base) <= 0)
 		{
+			//av_log(NULL,AV_LOG_PANIC,"************write video\r\n");
 			//read data from fifo
 			if (av_fifo_size(fifo_video) < frame_size && !bCapture)
 			{
@@ -1068,7 +1078,7 @@ DWORD WINAPI RecordThreadProc( LPVOID lpParam )
 					cur_pts_v = pkt.pts;
 					//写入一个packet.
 					ret = av_interleaved_write_frame(pFormatCtx_Out, &pkt);
-					//delete[] pkt.data;
+
 					av_free_packet(&pkt);
 				}
 				VideoFrameIndex++;
@@ -1076,6 +1086,7 @@ DWORD WINAPI RecordThreadProc( LPVOID lpParam )
 		}
 		else
 		{
+			
 			if (NULL == fifo_audio)
 			{
 				continue;//还未初始化fifo
@@ -1116,7 +1127,7 @@ DWORD WINAPI RecordThreadProc( LPVOID lpParam )
 				frame->pts = AudioFrameIndex * pFormatCtx_Out->streams[AudioIndex]->codec->frame_size;
 				if (avcodec_encode_audio2(pFormatCtx_Out->streams[AudioIndex]->codec, &pkt_out, frame, &got_picture) < 0)
 				{
-					printf("can not decoder a frame");
+					av_log(NULL,AV_LOG_ERROR,"can not decoder a frame");
 				}
 				av_frame_free(&frame);
 				if (got_picture) 
@@ -1129,7 +1140,12 @@ DWORD WINAPI RecordThreadProc( LPVOID lpParam )
 					cur_pts_a = pkt_out.pts;
 					
 					int ret = av_interleaved_write_frame(pFormatCtx_Out, &pkt_out);
+					
 					av_free_packet(&pkt_out);
+				}
+				else
+				{
+					//av_log(NULL,AV_LOG_PANIC,"xxxxxxxxxxxxxwrite audio file failed\r\n");
 				}
 				AudioFrameIndex++;
 			}
@@ -1153,7 +1169,7 @@ DWORD WINAPI RecordThreadProc( LPVOID lpParam )
 
 	
 	recordThreadQuit = 1;
-	printf("app  exit\r\n");
+	av_log(NULL,AV_LOG_INFO,"app  exit\r\n");
 	
 	return 0;
 }
@@ -1183,7 +1199,11 @@ int  CloseDevices()
 		avformat_close_input(&pFormatCtx_Audio);
 		pFormatCtx_Audio = NULL;
 	}
-	av_audio_fifo_free(fifo_audio);
+	if(fifo_audio)
+	{
+		av_audio_fifo_free(fifo_audio);
+		fifo_audio = NULL;
+	}
 	return 0;
 }
 int  SDK_CallMode CloudWalk_CloseDevices(void)
@@ -1195,6 +1215,7 @@ int  SDK_CallMode CloudWalk_CloseDevices(void)
 */
 int  SDK_CallMode CloudWalk_RecordStop (void)
 {
+	av_log(NULL,AV_LOG_DEBUG, "CloudWalk_RecordStop\r\n");
 	//停止录像，挂起音频采集线程，然后禁止推送音视频数据到录像队列.
 	if(false == bStartRecord)
 	{
@@ -1205,7 +1226,7 @@ int  SDK_CallMode CloudWalk_RecordStop (void)
 	ResetEvent(gAudioHandle);
 	while(!recordThreadQuit)
 	{
-		printf("RecordStop wait quit\r\n");
+		av_log(NULL,AV_LOG_ERROR,"RecordStop wait quit\r\n");
 		Sleep(10);
 	}
 	return ERR_RECORD_OK;
@@ -1217,20 +1238,21 @@ int  SDK_CallMode CloudWalk_RecordStop (void)
 */
 CLOUDWALKFACESDK_API  int  SDK_CallMode CloudWalk_RecordStart (const char* filePath,VideoInfo* pVideoInfo, AudioInfo* pAudioInfo,SubTitleInfo* pSubTitle)
 {
+	av_log(NULL,AV_LOG_DEBUG, "CloudWalk_RecordStart\r\n");
 	if(bStartRecord)
 	{
-		printf("record has been started already!\r\n");
+		av_log(NULL,AV_LOG_ERROR,"record has been started already!\r\n");
 		return 0;
 	}
 	if(!bCapture)
 	{
-		printf("not open devices!\r\n");
+		av_log(NULL,AV_LOG_ERROR,"not open devices!\r\n");
 		return ERR_RECORD_NOT_OPEN_DEVS;
 	}
 	gOutVideoInfo = *pVideoInfo;
 	if (OpenOutPut(filePath,pVideoInfo,pAudioInfo,pSubTitle) < 0)
 	{
-		printf("open output file failed\r\n");
+		av_log(NULL,AV_LOG_ERROR,"open output file failed\r\n");
 		return ERR_RECORD_OPEN_FILE;
 	}
 	
@@ -1352,24 +1374,24 @@ int  SDK_CallMode   CloudWalk_OpenDevices(
 	AVInputFormat *pDShowInputFmt = av_find_input_format("dshow");
 	if(pDShowInputFmt == NULL)
 	{
-		printf("open dshow failed\r\n");
+		av_log(NULL,AV_LOG_ERROR,"open dshow failed\r\n");
 		return ERR_RECORD_DSHOW_OPEN;
 	}
 	
 	if (OpenVideoCapture(getDevicePath("video",pVideoDevice).c_str() ,pDShowInputFmt) < 0)
 	{
-		printf("open video failed\r\n");
+		av_log(NULL,AV_LOG_ERROR,"open video failed\r\n");
 		return ERR_RECORD_VIDEO_OPEN;
 	}
 	if (OpenAudioCapture(getDevicePath("audio",pAudioDevice).c_str(),pDShowInputFmt) < 0)
 	{
-		printf("open audio failed\r\n");
+		av_log(NULL,AV_LOG_ERROR,"open audio failed\r\n");
 		return ERR_RECORD_AUDIO_OPEN;
 	}
 #ifdef DRAW_TEXT
 	if(init_filters(filter_descr) < 0)
 	{
-		printf("init_filters failed\r\n");
+		av_log(NULL,AV_LOG_ERROR,("init_filters failed\r\n");
 		return -4;
 	}
 #endif
@@ -1429,7 +1451,7 @@ char** SDK_CallMode CloudWalk_ListDevices(int  devType, int* devCount)
 			std::string str = ws2s(videoDevices[i]);
 			strcpy(pStrDevices[i],str.c_str());
 			//str.copy(pStrDevices[i],str.size());
-			printf("video[%d]=%s\r\n",i+1,str.c_str());
+			av_log(NULL,AV_LOG_INFO,"video[%d]=%s\r\n",i+1,str.c_str());
 		}
 		*devCount =  videoDevices.size();
 	}
@@ -1440,7 +1462,7 @@ char** SDK_CallMode CloudWalk_ListDevices(int  devType, int* devCount)
 			std::string str = ws2s(audioDevices[i]);
 			//str.copy(pStrDevices[i],str.size());
 			strcpy(pStrDevices[i],str.c_str());
-			printf("audio[%d]=%s\r\n",i+1,str.c_str());
+			av_log(NULL,AV_LOG_INFO,"audio[%d]=%s\r\n",i+1,str.c_str());
 		}
 		*devCount =  audioDevices.size();
 	}
