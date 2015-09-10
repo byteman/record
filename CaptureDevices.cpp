@@ -2,7 +2,9 @@
 #include "CaptureDevices.h"
 
 
-CaptureDevices::CaptureDevices()
+CaptureDevices::CaptureDevices():
+	enumMonikerVideo(NULL),
+	enumMonikerAudio(NULL)
 {
 	CoInitialize(0);
 	Enumerate();
@@ -11,8 +13,12 @@ CaptureDevices::CaptureDevices()
 
 CaptureDevices::~CaptureDevices()
 {
-	enumMonikerAudio->Release();
-	enumMonikerVideo->Release();
+	if(enumMonikerAudio)
+		enumMonikerAudio->Release();
+	enumMonikerAudio = NULL;
+	if(enumMonikerVideo)
+		enumMonikerVideo->Release();
+	enumMonikerVideo = NULL;
 	CoUninitialize();
 }
 

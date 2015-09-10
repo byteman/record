@@ -262,15 +262,15 @@ int OpenVideoCapture(const char* psDevName,AVInputFormat *ifmt)
 	//The distance from the top edge of the screen or desktop
 	//av_dict_set(&options,"offset_y","40",0);
 	//Video frame size. The default is to capture the full screen
-	//av_dict_set(&options,"video_size","320x240",0);
+	av_dict_set(&options,"pix_fmt","rgb24",0);
 	if(avformat_open_input(&pFormatCtx_Video, psDevName, ifmt, &options)!=0)
 		//if(avformat_open_input(&pFormatCtx_Video, psDevName, ifmt, NULL)!=0)
 	{
 		av_log(NULL,AV_LOG_ERROR,"Couldn't open input stream.（无法打开视频输入流）\n");
 		return -1;
 	}
-	pFormatCtx_Video->streams[0]->codec->time_base.num = 1;
-	pFormatCtx_Video->streams[0]->codec->time_base.den = FPS;
+	//pFormatCtx_Video->streams[0]->codec->time_base.num = 1;
+	//pFormatCtx_Video->streams[0]->codec->time_base.den = FPS;
 	if(avformat_find_stream_info(pFormatCtx_Video,NULL)<0)
 	{
 		av_log(NULL,AV_LOG_ERROR,"Couldn't find stream information.（无法获取视频流信息）\n");
@@ -1438,7 +1438,7 @@ char** SDK_CallMode CloudWalk_ListDevices(int  devType, int* devCount)
 	capDev->GetAudioDevices(&audioDevices);
 
 	delete capDev;
-
+	
 	for(int i = 0;  i < MAX_DEVICES_NUM;i++)
 	{
 		pStrings[i] = &pStrDevices[i][0];
