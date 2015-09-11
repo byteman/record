@@ -45,6 +45,7 @@ enum SDK_RECORD_ERR{
 	ERR_RECORD_AUDIO_OPEN, //音频设备打开失败
 	ERR_RECORD_NOT_OPEN_DEVS,	//未打开音视频设备,录像启动失败.
 	ERR_RECORD_OPEN_FILE,	//创建录像文件失败.
+	ERR_RECORD_OPEN_FILTER,
 };
 
 /**
@@ -116,7 +117,7 @@ enum VideoEncType
 };
 typedef struct _VideoInfo
 {
-	int width,height;	//视频的高度和宽度
+	int width,height;	//视频的高度和宽度,如果没有按16字节对齐，内部会强制对齐.
 	int fps;		//视频的帧率
 	int bitrate;	//视频的码率
 
@@ -130,13 +131,16 @@ typedef struct _AudioInfo
 #define MAX_SUBTITLE_SIZE 128
 typedef struct _SubTitleInfo
 {
-	int x,y; // 字幕的位置
-	char text[MAX_SUBTITLE_SIZE]; //字幕的内容
-	int fontsize; //字体的大小.
+	int  x,y; // 字幕的位置
+	const char *text; //字幕的内容
+	const char *fontname; //字体名称. [simfang.ttf]
+	const char *fontcolor; //字体颜色[red,white,black]
+	int  fontsize; //字体的大小.
 }SubTitleInfo;
 typedef enum{
 
 }REC_ERR;
+
 
 CLOUDWALKFACESDK_API  int  SDK_CallMode CloudWalk_RecordStart (const char* filePath,VideoInfo* pVideoInfo, AudioInfo* pAudioInfo,SubTitleInfo* pSubTitle);
 

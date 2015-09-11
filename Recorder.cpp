@@ -36,16 +36,16 @@ extern "C"
 #define   LOCALTIME_R(t)     localtime_r((t),   (struct   tm   *)&tmres)     
 #endif   
 
-//#define DRAW_TEXT 1
+#define DRAW_TEXT 1
 AVFormatContext	*pFormatCtx_Video = NULL, *pFormatCtx_Audio = NULL, *pFormatCtx_Out = NULL;
 AVCodecContext	*pCodecCtx_Video;
 AVCodec			*pCodec_Video;
 AVFifoBuffer	*fifo_video = NULL;
 AVAudioFifo		*fifo_audio = NULL;
 
-AVFilterGraph	*filter_graph;
-AVFilterContext *buffersink_ctx;
-AVFilterContext *buffersrc_ctx;
+AVFilterGraph	*filter_graph = NULL;
+AVFilterContext *buffersink_ctx = NULL;
+AVFilterContext *buffersrc_ctx = NULL;
 
 static HANDLE gAudioHandle = INVALID_HANDLE_VALUE;
 static HANDLE gVideoHandle = INVALID_HANDLE_VALUE;
@@ -91,10 +91,11 @@ DWORD WINAPI AudioCapThreadProc( LPVOID lpParam );
 #define MAX_HEIGHT 720
 static uint8_t rgb24_buffer[MAX_WIDTH*MAX_HEIGHT*3];
 static int VideoFrameIndex = 0, AudioFrameIndex = 0;
-const char *filter_descr = "movie=my_logo.png[wm];[in][wm]overlay=5:5[out]";
-//const char *filter_descr="drawtext=fontfile=simfont.ttf:fontcolor=white:shadowcolor=black:text='测试视频':x=10:y=10";
+//const char *filter_descr = "movie=my_logo.png[wm];[in][wm]overlay=5:5[out]";
+//const char *filter_descr="drawtext=fontfile=simfang.ttf: fontcolor=red: fontsize=32: shadowcolor=black: text='hello': x=10:y=10";
+const char *filter_descr="drawtext=fontfile=simfang.ttf:fontcolor=red:fontsize=32:shadowcolor=black:text='hello':x=10:y=10";
 //const char *filter_descr="drawtext=fontfile=simfang.ttf: timecode='09\:57\:00\;00': r=30: x=(w-tw)/2: y=h-(2*lh): fontcolor=white: box=1: boxcolor=0x00000000@1";
-
+//const char *filter_descr = "overlay=5:5";   
 
 static void get_log_filename(char* buffer, int size)
 {
@@ -181,6 +182,11 @@ std::string UTF8ToGBK(const char* str)
      return result;
 }
 #if 1
+static void uninit_filter()
+{
+	avfilter_graph_free(&filter_graph);
+	filter_graph = NULL;
+}
 static int init_filters(const char *filters_descr)  
 {  
     char args[512];  
@@ -189,7 +195,7 @@ static int init_filters(const char *filters_descr)
     AVFilter *buffersink = avfilter_get_by_name("ffbuffersink");  
     AVFilterInOut *outputs = avfilter_inout_alloc();  
     AVFilterInOut *inputs  = avfilter_inout_alloc();  
-    enum PixelFormat pix_fmts[] = { AV_PIX_FMT_YUV420P, PIX_FMT_NONE };  
+    enum PixelFormat pix_fmts[] = { AV_PIX_FMT_RGB24, PIX_FMT_NONE };  
     AVBufferSinkParams *buffersink_params;  
   
     filter_graph = avfilter_graph_alloc();  
@@ -197,8 +203,8 @@ static int init_filters(const char *filters_descr)
     /* buffer video source: the decoded frames from the decoder will be inserted here. */  
 	//pFormatCtx_Video->streams[0]->codec->pix_fmt
     _snprintf_s(args, sizeof(args),  
-            "video_size=%dx%d:pix_fmt=%d:time_base=%d/%d:pixel_aspect=1/1",  
-			pFormatCtx_Video->streams[0]->codec->width, pFormatCtx_Video->streams[0]->codec->height, AV_PIX_FMT_YUV420P ,  
+            "video_size=%dx%d:pix_fmt=%d:time_base=%d/%d:pixel_aspect=%d/%d",  
+			pFormatCtx_Video->streams[0]->codec->width, pFormatCtx_Video->streams[0]->codec->height, pFormatCtx_Video->streams[0]->codec->pix_fmt ,  
             pFormatCtx_Video->streams[0]->codec->time_base.num, pFormatCtx_Video->streams[0]->codec->time_base.den,  
             pFormatCtx_Video->streams[0]->codec->sample_aspect_ratio.num, pFormatCtx_Video->streams[0]->codec->sample_aspect_ratio.den);  
   
@@ -206,18 +212,24 @@ static int init_filters(const char *filters_descr)
                                        args, NULL, filter_graph);  
     if (ret < 0) {  
         av_log(NULL,AV_LOG_ERROR,"Cannot create buffer source\n");  
-        return ret;  
+         goto end;
     }  
   
     /* buffer video sink: to terminate the filter chain. */  
-    buffersink_params = av_buffersink_params_alloc();  
-    buffersink_params->pixel_fmts = pix_fmts;  
+    //buffersink_params = av_buffersink_params_alloc();  
+    //buffersink_params->pixel_fmts = pix_fmts;  
     ret = avfilter_graph_create_filter(&buffersink_ctx, buffersink, "out",  
-                                       NULL, buffersink_params, filter_graph);  
-    av_free(buffersink_params);  
+                                       NULL, NULL, filter_graph);  
+	ret = av_opt_set_int_list(buffersink_ctx, "pix_fmts", pix_fmts,
+                              AV_PIX_FMT_NONE, AV_OPT_SEARCH_CHILDREN);
+    if (ret < 0) {
+        av_log(NULL, AV_LOG_ERROR, "Cannot set output pixel format\n");
+         goto end;
+    }
+    //av_free(buffersink_params);  
     if (ret < 0) {  
         av_log(NULL,AV_LOG_ERROR,"Cannot create buffer sink\n");  
-        return ret;  
+         goto end;
     }  
   
     /* Endpoints for the filter graph. */  
@@ -233,10 +245,15 @@ static int init_filters(const char *filters_descr)
   
     if ((ret = avfilter_graph_parse_ptr(filter_graph, filters_descr,  
                                     &inputs, &outputs, NULL)) < 0)  
-        return ret;  
+         goto end;
   
     if ((ret = avfilter_graph_config(filter_graph, NULL)) < 0)  
-        return ret;  
+        goto end;
+end:
+	if(inputs)
+		avfilter_inout_free(&inputs);
+	if(outputs)
+		avfilter_inout_free(&outputs);
     return 0;  
 }  
 #endif
@@ -443,6 +460,28 @@ void VBR_Set(AVCodecContext *c, long br, long max, long min)
 	c->bit_rate = br;
 	*/
 }
+static AVFrame *alloc_picture(enum AVPixelFormat pix_fmt, int width, int height, int algin)
+{
+    AVFrame *picture;
+    int ret;
+
+    picture = av_frame_alloc();
+    if (!picture)
+        return NULL;
+
+    picture->format = pix_fmt;
+    picture->width  = width;
+    picture->height = height;
+
+    /* allocate the buffers for the frame data */
+    ret = av_frame_get_buffer(picture, algin);
+    if (ret < 0) {
+        fprintf(stderr, "Could not allocate frame data.\n");
+        exit(1);
+    }
+
+    return picture;
+}
 /*
 录像的时候才会指定输出宽度和高度，码率，编码类型,帧率
 还有编码器的参数(gop等）
@@ -457,6 +496,8 @@ int OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioInfo* pAudioI
 		av_log(NULL,AV_LOG_ERROR,"please opendevices first\r\n");
 		return -1;
 	}
+	
+
 	//为输出文件分配FormatContext
 	avformat_alloc_output_context2(&pFormatCtx_Out, NULL, NULL, outFileName); //这个函数调用后pFormatCtx_Out->oformat中就猜出来了目标编码器
 	//创建视频流，并且视频编码器初始化.
@@ -503,8 +544,8 @@ int OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioInfo* pAudioI
 		//可查看ff_mpeg4_encoder中指定的第一个像素格式，这个是采用MPEG4编码的时候，输入视频帧的像素格式，这里是YUV420P
 		pVideoStream->codec->pix_fmt = pFormatCtx_Out->streams[VideoIndex]->codec->codec->pix_fmts[0]; //像素格式，采用MPEG4支持的第一个格式
 		
-		CBR_Set(pVideoStream->codec, pVideoInfo->bitrate); //设置固定码率
-		//VBR_Set(pVideoStream->codec, pVideoInfo->bitrate, 2*pVideoInfo->bitrate  , pVideoInfo->bitrate/2);
+		//CBR_Set(pVideoStream->codec, pVideoInfo->bitrate); //设置固定码率
+		VBR_Set(pVideoStream->codec, pVideoInfo->bitrate, 2*pVideoInfo->bitrate  , pVideoInfo->bitrate/2);
 		
 		if (pFormatCtx_Out->oformat->flags & AVFMT_GLOBALHEADER)
 			pVideoStream->codec->flags |= CODEC_FLAG_GLOBAL_HEADER;
@@ -579,9 +620,9 @@ int OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioInfo* pAudioI
 		av_log(NULL,AV_LOG_ERROR,"can not write the header of the output file!\n");
 		return -7;
 	}
-	//AVRational time_base={1, pAudioStream->codec->sample_rate};
-	//pAudioStream->time_base = time_base;
-	pVideoStream->codec->time_base = pFormatCtx_Video->streams[0]->codec->time_base;
+	
+
+	//pVideoStream->codec->time_base = pFormatCtx_Video->streams[0]->codec->time_base;
 	//按输出的录像视频分辨率大小和编码输入格式分配一个AVFrame，并且填充对应的数据区。
 	pEncFrame  = av_frame_alloc();
 	//用于录像的一帧视频的大小
@@ -595,11 +636,11 @@ int OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioInfo* pAudioI
 		pFormatCtx_Out->streams[VideoIndex]->codec->height);
 
 	//设置需要转换的目标格式为YUV420P
-	yuv420p_convert_ctx = sws_getContext(pCodecCtx_Video->width, pCodecCtx_Video->height, pCodecCtx_Video->pix_fmt, 
-		pVideoInfo->width, pVideoInfo->height, AV_PIX_FMT_YUV420P, SWS_POINT, NULL, NULL, NULL); 
-
-	//yuv420p_convert_ctx = sws_getContext(pCodecCtx_Video->width, pCodecCtx_Video->height, AV_PIX_FMT_RGB24, 
+	//yuv420p_convert_ctx = sws_getContext(pCodecCtx_Video->width, pCodecCtx_Video->height, pCodecCtx_Video->pix_fmt, 
 	//	pVideoInfo->width, pVideoInfo->height, AV_PIX_FMT_YUV420P, SWS_POINT, NULL, NULL, NULL); 
+
+	yuv420p_convert_ctx = sws_getContext(pCodecCtx_Video->width, pCodecCtx_Video->height, AV_PIX_FMT_BGR24, 
+		pVideoInfo->width, pVideoInfo->height, AV_PIX_FMT_YUV420P, SWS_POINT, NULL, NULL, NULL); 
 	//获取目标帧的大小.
 	frame_size = avpicture_get_size(pFormatCtx_Out->streams[VideoIndex]->codec->pix_fmt, pVideoInfo->width, pVideoInfo->height);
 	//申请30帧目标帧大小做video的fifo
@@ -609,7 +650,7 @@ int OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioInfo* pAudioI
 		av_log(NULL,AV_LOG_ERROR,"alloc pic fifo failed\r\n");
 		return -8;
 	}
-
+#if 0
 	pRecFrame = av_frame_alloc(); //分配一个帧，用于存放录制视频数据,目标是YUV420P
 	//int size = avpicture_get_size(AV_PIX_FMT_YUV420P, 
 	//	pVideoInfo->width, pVideoInfo->height);
@@ -619,7 +660,9 @@ int OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioInfo* pAudioI
 		pVideoInfo->width, 
 		pVideoInfo->height);
 
-	
+#else
+	pRecFrame = alloc_picture(AV_PIX_FMT_YUV420P,pVideoInfo->width,pVideoInfo->height,16);
+#endif
 	return 0;
 }
 
@@ -833,16 +876,17 @@ DWORD WINAPI VideoCapThreadProc( LPVOID lpParam )
 			if (got_picture)
 			{
 				//转换到目标格式YUV420P,存入picture这个AVFrame. 对于这个摄像头是YUYV422转换到YUV420P
-				if(pFrame->format != AV_PIX_FMT_RGB24)
-					sws_scale(rgb24_convert_ctx, (const uint8_t* const*)pFrame->data, pFrame->linesize, 0, 
-						pCodecCtx_Video->height, pPreviewFrame->data, pPreviewFrame->linesize);
+				//if(pFrame->format != AV_PIX_FMT_RGB24)
+				//	sws_scale(rgb24_convert_ctx, (const uint8_t* const*)pFrame->data, pFrame->linesize, 0, 
+				//		pCodecCtx_Video->height, pPreviewFrame->data, pPreviewFrame->linesize);
 				
 #ifdef DRAW_TEXT
-				pPreviewFrame->width = 640;
-				pPreviewFrame->height = 480;
-				pPreviewFrame->format = AV_PIX_FMT_RGB24;
-				
-				//int ret = push_filter(pPreviewFrame,filt_frame);
+				int ret = 0;
+				if(bStartRecord && fifo_video)
+				{
+					//直接通过filter将摄像头的原始数据转换到RGB24格式，滤波器出来的就是RGB24.
+					ret = push_filter(pFrame,filt_frame);
+				}
 				
 #endif
 				
@@ -854,15 +898,21 @@ DWORD WINAPI VideoCapThreadProc( LPVOID lpParam )
 				{
 					//回调视频数据.
 #ifdef DRAW_TEXT
-					//if(ret == 0)
+					if(bStartRecord && ret==0)
+						g_video_callback(filt_frame->data[0], pCodecCtx_Video->width ,pCodecCtx_Video->height);
+					else
+					{
+						sws_scale(rgb24_convert_ctx, (const uint8_t* const*)pFrame->data, pFrame->linesize, 0, 
+							pCodecCtx_Video->height, pPreviewFrame->data, pPreviewFrame->linesize);
 						g_video_callback(pPreviewFrame->data[0], pCodecCtx_Video->width ,pCodecCtx_Video->height);
-						
-			
-					
-#else
-					
+					}
+#else	
 					if(pFrame->format != AV_PIX_FMT_RGB24)
+					{
+						sws_scale(rgb24_convert_ctx, (const uint8_t* const*)pFrame->data, pFrame->linesize, 0, 
+							pCodecCtx_Video->height, pPreviewFrame->data, pPreviewFrame->linesize);
 						g_video_callback(pPreviewFrame->data[0], pCodecCtx_Video->width ,pCodecCtx_Video->height);
+					}
 					else 
 						g_video_callback(pFrame->data[0], pCodecCtx_Video->width ,pCodecCtx_Video->height);
 #endif
@@ -872,12 +922,7 @@ DWORD WINAPI VideoCapThreadProc( LPVOID lpParam )
 				fwrite(pPreviewFrame->data[0],nRGB24size,1,output);    
 #endif
 				}
-				#ifdef DRAW_TEXT
-				//if(ret == 0)
-				//{
-				//	av_frame_unref(filt_frame);
-				//}
-#endif
+	
 				//bStartRecord这个标志置位后，fifo_video可能还没有创建成功.
 				if(bStartRecord && fifo_video) //如果启动了录像，才推送视频数据到录像队列.
 				{
@@ -886,15 +931,10 @@ DWORD WINAPI VideoCapThreadProc( LPVOID lpParam )
 					int y_size = gOutVideoInfo.width*gOutVideoInfo.height;
 					if (av_fifo_space(fifo_video) >= gYuv420FrameSize)
 					{
-						sws_scale(yuv420p_convert_ctx, (const uint8_t* const*)pFrame->data, pFrame->linesize, 0, 
-								pFormatCtx_Out->streams[VideoIndex]->codec->height, pRecFrame->data, pRecFrame->linesize);
-						//pRecFrame->width = 640;
-						//pRecFrame->height = 480;
-						//pRecFrame->format = AV_PIX_FMT_YUV420P;
-				
-						//int ret = push_filter(pRecFrame,filt_frame);
-						//sws_scale(yuv420p_convert_ctx, (const uint8_t* const*)pPreviewFrame->data, pPreviewFrame->linesize, 0, 
-						//		pFormatCtx_Out->streams[VideoIndex]->codec->height, pRecFrame->data, pRecFrame->linesize);
+						//倒数第3个参数是源视频的高度，我原来传成了目的视频的高度，导致，视频的下半部花屏.
+						sws_scale(yuv420p_convert_ctx, (const uint8_t* const*)filt_frame->data, filt_frame->linesize, 0, 
+							filt_frame->height, pRecFrame->data, pRecFrame->linesize);
+
 #ifdef YUV_DEBUG
 				fwrite(pRecFrame->data[0],y_size,1,yuvout);  
 				fwrite(pRecFrame->data[1],y_size/4,1,yuvout); 
@@ -914,6 +954,12 @@ DWORD WINAPI VideoCapThreadProc( LPVOID lpParam )
 						//}
 					}
 				}
+#ifdef DRAW_TEXT
+				if(bStartRecord && ret == 0)
+				{
+					av_frame_unref(filt_frame);
+				}
+#endif
 				
 			}
 		}
@@ -1229,7 +1275,45 @@ int  SDK_CallMode CloudWalk_RecordStop (void)
 		av_log(NULL,AV_LOG_ERROR,"RecordStop wait quit\r\n");
 		Sleep(10);
 	}
+	uninit_filter();
 	return ERR_RECORD_OK;
+}
+int GBKToUTF8_V2(const char * lpGBKStr, char * lpUTF8Str,int nUTF8StrLen)
+{
+    wchar_t * lpUnicodeStr = NULL;
+    int nRetLen = 0;
+
+    if(!lpGBKStr)  //如果GBK字符串为NULL则出错退出
+        return 0;
+
+    nRetLen = ::MultiByteToWideChar(CP_ACP,0,(char *)lpGBKStr,-1,NULL,NULL);  //获取转换到Unicode编码后所需要的字符空间长度
+    lpUnicodeStr = new WCHAR[nRetLen + 1];  //为Unicode字符串空间
+    nRetLen = ::MultiByteToWideChar(CP_ACP,0,(char *)lpGBKStr,-1,lpUnicodeStr,nRetLen);  //转换到Unicode编码
+    if(!nRetLen)  //转换失败则出错退出
+        return 0;
+
+    nRetLen = ::WideCharToMultiByte(CP_UTF8,0,lpUnicodeStr,-1,NULL,0,NULL,NULL);  //获取转换到UTF8编码后所需要的字符空间长度
+    
+    if(!lpUTF8Str)  //输出缓冲区为空则返回转换后需要的空间大小
+    {
+        if(lpUnicodeStr)       
+  delete []lpUnicodeStr;
+        return nRetLen;
+    }
+    
+    if(nUTF8StrLen < nRetLen)  //如果输出缓冲区长度不够则退出
+    {
+        if(lpUnicodeStr)
+            delete []lpUnicodeStr;
+        return 0;
+    }
+
+    nRetLen = ::WideCharToMultiByte(CP_UTF8,0,lpUnicodeStr,-1,(char *)lpUTF8Str,nUTF8StrLen,NULL,NULL);  //转换到UTF8编码
+    
+    if(lpUnicodeStr)
+        delete []lpUnicodeStr;
+    
+    return nRetLen;
 }
 
 /*
@@ -1249,13 +1333,26 @@ CLOUDWALKFACESDK_API  int  SDK_CallMode CloudWalk_RecordStart (const char* fileP
 		av_log(NULL,AV_LOG_ERROR,"not open devices!\r\n");
 		return ERR_RECORD_NOT_OPEN_DEVS;
 	}
+	pVideoInfo->width  =  FFALIGN(pVideoInfo->width,  16);
+	pVideoInfo->height =  FFALIGN(pVideoInfo->height, 16);
 	gOutVideoInfo = *pVideoInfo;
 	if (OpenOutPut(filePath,pVideoInfo,pAudioInfo,pSubTitle) < 0)
 	{
 		av_log(NULL,AV_LOG_ERROR,"open output file failed\r\n");
 		return ERR_RECORD_OPEN_FILE;
 	}
-	
+#ifdef DRAW_TEXT
+	char filter_descr[256] = {0,};
+	char text_buf[256] = {0,};
+	//"drawtext=fontfile=simfang.ttf:fontcolor=red:fontsize=32:shadowcolor=black:text='hello':x=10:y=10"
+	GBKToUTF8_V2(pSubTitle->text,text_buf,256);
+	_snprintf_s(filter_descr,256,"drawtext=fontfile=%s:fontcolor=%s:fontsize=%d:shadowcolor=black:text='%s':x=%d:y=%d",pSubTitle->fontname,pSubTitle->fontcolor,pSubTitle->fontsize,text_buf,pSubTitle->x,pSubTitle->y);
+	if(init_filters(filter_descr) < 0)
+	{
+		av_log(NULL,AV_LOG_ERROR,"init_filters failed\r\n");
+		return ERR_RECORD_OPEN_FILTER;
+	}
+#endif
 	//通知音视频采集线程开始推送音视频数据到录像队列.
 	//bStartRecord = true;
 	//start record thread
@@ -1388,13 +1485,7 @@ int  SDK_CallMode   CloudWalk_OpenDevices(
 		av_log(NULL,AV_LOG_ERROR,"open audio failed\r\n");
 		return ERR_RECORD_AUDIO_OPEN;
 	}
-#ifdef DRAW_TEXT
-	if(init_filters(filter_descr) < 0)
-	{
-		av_log(NULL,AV_LOG_ERROR,("init_filters failed\r\n");
-		return -4;
-	}
-#endif
+
 	//信号初始化为无信号，然后信号产生后，需要手工复位，否则信号一直有效.
 	gAudioHandle = CreateEvent(NULL,TRUE,FALSE,NULL);
 	gVideoHandle = CreateEvent(NULL,TRUE,FALSE,NULL);
