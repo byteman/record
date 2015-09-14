@@ -783,36 +783,6 @@ static int push_filter(AVFrame	*pFrame,AVFrame* pFilterFrame)
 
     }
 
-	 /*
-	while (1) {
-		int ret = av_buffersink_get_buffer_ref(buffersink_ctx, &picref, 0);
-		if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
-		{
-			ret = -2;
-			break;
-		}
-		if (ret < 0)
-		{
-			break;		
-		}
-		
-		if (picref) {
-	#if ENABLE_YUVFILE
-			int y_size=picref->video->w*picref->video->h;
-			fwrite(picref->data[0],1,y_size,fp_yuv);     //Y
-			fwrite(picref->data[1],1,y_size/4,fp_yuv);   //U
-			fwrite(picref->data[2],1,y_size/4,fp_yuv);   //V
-			
-	#endif
-			return picref;
-			//avfilter_unref_bufferp(&picref);	//free picref;
-		}
-
-	}
-	*/
-	//if(ret < 0) return NULL;
-	
-
 }
 #endif
 
