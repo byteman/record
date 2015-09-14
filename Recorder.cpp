@@ -1152,13 +1152,13 @@ DWORD WINAPI RecordThreadProc( LPVOID lpParam )
 				av_frame_free(&frame);
 				if (got_picture) 
 				{
-				
+					pkt_out.stream_index = AudioIndex; //千万要记得加这句话，否则会导致没有音频流.
 					av_packet_rescale_ts(&pkt_out, pFormatCtx_Out->streams[AudioIndex]->codec->time_base, pFormatCtx_Out->streams[AudioIndex]->time_base);
 				
 					int ret = av_interleaved_write_frame(pFormatCtx_Out, &pkt_out);
 					if(ret == 0)
 					{
-						av_log(NULL,AV_LOG_PANIC,"write audio ok\r\n");
+						//av_log(NULL,AV_LOG_PANIC,"write audio ok\r\n");
 					}
 					else
 					{
