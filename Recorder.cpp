@@ -36,7 +36,7 @@ extern "C"
 #define   LOCALTIME_R(t)     localtime_r((t),   (struct   tm   *)&tmres)     
 #endif   
 
-#define DRAW_TEXT 1
+#define ENABLE_FILTER 1
 AVFormatContext	*pFormatCtx_Video = NULL, *pFormatCtx_Audio = NULL, *pFormatCtx_Out = NULL;
 AVCodecContext	*pCodecCtx_Video;
 AVCodec			*pCodec_Video;
@@ -90,7 +90,7 @@ DWORD WINAPI AudioCapThreadProc( LPVOID lpParam );
 #define MAX_WIDTH 1080
 #define MAX_HEIGHT 720
 static uint8_t rgb24_buffer[MAX_WIDTH*MAX_HEIGHT*3];
-static int VideoFrameIndex = 0, AudioFrameIndex = 0;
+static int64_t VideoFrameIndex = 0, AudioFrameIndex = 0;
 //const char *filter_descr = "movie=my_logo.png[wm];[in][wm]overlay=5:5[out]";
 //const char *filter_descr="drawtext=fontfile=simfang.ttf: fontcolor=red: fontsize=32: shadowcolor=black: text='hello': x=10:y=10";
 const char *filter_descr="drawtext=fontfile=simfang.ttf:fontcolor=red:fontsize=32:shadowcolor=black:text='hello':x=10:y=10";
@@ -181,7 +181,7 @@ std::string UTF8ToGBK(const char* str)
 
      return result;
 }
-#if 1
+#if ENABLE_FILTER
 static void uninit_filter()
 {
 	avfilter_graph_free(&filter_graph);
@@ -746,7 +746,7 @@ static void YUV420p_to_RGB24(unsigned char *yuv420[3], unsigned char *rgb24, int
 //#define RGB_DEBUG 1
 //#define YUV_DEBUG 1
 FILE *fp_yuv = NULL;
-#ifdef DRAW_TEXT
+#ifdef ENABLE_FILTER
 static int push_filter(AVFrame	*pFrame,AVFrame* pFilterFrame)
 {
 	int ret = 0;
@@ -850,7 +850,7 @@ DWORD WINAPI VideoCapThreadProc( LPVOID lpParam )
 				//	sws_scale(rgb24_convert_ctx, (const uint8_t* const*)pFrame->data, pFrame->linesize, 0, 
 				//		pCodecCtx_Video->height, pPreviewFrame->data, pPreviewFrame->linesize);
 				
-#ifdef DRAW_TEXT
+#ifdef ENABLE_FILTER
 				int ret = 0;
 				if(bStartRecord && fifo_video)
 				{
@@ -867,7 +867,7 @@ DWORD WINAPI VideoCapThreadProc( LPVOID lpParam )
 				if(g_video_callback)
 				{
 					//回调视频数据.
-#ifdef DRAW_TEXT
+#ifdef ENABLE_FILTER
 					if(bStartRecord && ret==0)
 						g_video_callback(filt_frame->data[0], pCodecCtx_Video->width ,pCodecCtx_Video->height);
 					else
@@ -877,14 +877,11 @@ DWORD WINAPI VideoCapThreadProc( LPVOID lpParam )
 						g_video_callback(pPreviewFrame->data[0], pCodecCtx_Video->width ,pCodecCtx_Video->height);
 					}
 #else	
-					if(pFrame->format != AV_PIX_FMT_RGB24)
-					{
-						sws_scale(rgb24_convert_ctx, (const uint8_t* const*)pFrame->data, pFrame->linesize, 0, 
+				
+					sws_scale(rgb24_convert_ctx, (const uint8_t* const*)pFrame->data, pFrame->linesize, 0, 
 							pCodecCtx_Video->height, pPreviewFrame->data, pPreviewFrame->linesize);
 						g_video_callback(pPreviewFrame->data[0], pCodecCtx_Video->width ,pCodecCtx_Video->height);
-					}
-					else 
-						g_video_callback(pFrame->data[0], pCodecCtx_Video->width ,pCodecCtx_Video->height);
+					
 #endif
 						
 					
@@ -901,9 +898,14 @@ DWORD WINAPI VideoCapThreadProc( LPVOID lpParam )
 					int y_size = gOutVideoInfo.width*gOutVideoInfo.height;
 					if (av_fifo_space(fifo_video) >= gYuv420FrameSize)
 					{
+#ifdef ENABLE_FILTER
 						//倒数第3个参数是源视频的高度，我原来传成了目的视频的高度，导致，视频的下半部花屏.
 						sws_scale(yuv420p_convert_ctx, (const uint8_t* const*)filt_frame->data, filt_frame->linesize, 0, 
 							filt_frame->height, pRecFrame->data, pRecFrame->linesize);
+#else
+						sws_scale(yuv420p_convert_ctx, (const uint8_t* const*)pFrame->data, pFrame->linesize, 0, 
+							pFrame->height, pRecFrame->data, pRecFrame->linesize);
+#endif
 
 #ifdef YUV_DEBUG
 				fwrite(pRecFrame->data[0],y_size,1,yuvout);  
@@ -918,13 +920,14 @@ DWORD WINAPI VideoCapThreadProc( LPVOID lpParam )
 						
 						
 						LeaveCriticalSection(&VideoSection);
+						
 						//if(ret == 0)
 						//{
 						//	av_frame_unref(filt_frame);
 						//}
 					}
 				}
-#ifdef DRAW_TEXT
+#ifdef ENABLE_FILTER
 				if(bStartRecord && ret == 0)
 				{
 					av_frame_unref(filt_frame);
@@ -1007,6 +1010,8 @@ DWORD WINAPI AudioCapThreadProc( LPVOID lpParam )
 				EnterCriticalSection(&AudioSection);
 				av_audio_fifo_write(fifo_audio, (void **)frame->data, frame->nb_samples);
 				LeaveCriticalSection(&AudioSection);
+				
+				
 			}
 		}
 		
@@ -1041,8 +1046,8 @@ DWORD WINAPI RecordThreadProc( LPVOID lpParam )
 			}
 		}
 		
-		if(_av_compare_ts(cur_pts_v, pFormatCtx_Out->streams[VideoIndex]->time_base, 
-			cur_pts_a,pFormatCtx_Out->streams[AudioIndex]->time_base) <= 0)
+		if(_av_compare_ts(cur_pts_v, pFormatCtx_Out->streams[VideoIndex]->codec->time_base, 
+			cur_pts_a,pFormatCtx_Out->streams[AudioIndex]->codec->time_base) <= 0)
 		{
 			//av_log(NULL,AV_LOG_PANIC,"************write video\r\n");
 			//read data from fifo
@@ -1062,7 +1067,8 @@ DWORD WINAPI RecordThreadProc( LPVOID lpParam )
 					pFormatCtx_Out->streams[VideoIndex]->codec->height);
 				
 				//pts = n * (（1 / timbase）/ fps); 计算pts,编码之前计算pts
-				pEncFrame->pts = VideoFrameIndex * ((pFormatCtx_Video->streams[0]->time_base.den / pFormatCtx_Video->streams[0]->time_base.num) / FPS);
+				pEncFrame->pts = cur_pts_v++;// * ((pFormatCtx_Video->streams[0]->time_base.den / pFormatCtx_Video->streams[0]->time_base.num) / FPS);
+			
 				pEncFrame->format = pFormatCtx_Out->streams[VideoIndex]->codec->pix_fmt;
 				pEncFrame->width = pFormatCtx_Out->streams[VideoIndex]->codec->width;
 				pEncFrame->height=	pFormatCtx_Out->streams[VideoIndex]->codec->height;
@@ -1084,20 +1090,15 @@ DWORD WINAPI RecordThreadProc( LPVOID lpParam )
 				{
  					pkt.stream_index = VideoIndex;
 					//将编码后的包的Pts和dts，转换到输出文件中指定的时基 .在编码后就可以得出包的pts和dts.
-					pkt.pts = av_rescale_q_rnd(pkt.pts, pFormatCtx_Video->streams[0]->time_base, 
-						pFormatCtx_Out->streams[VideoIndex]->time_base, (AVRounding)(AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX));  
-					pkt.dts = av_rescale_q_rnd(pkt.dts,  pFormatCtx_Video->streams[0]->time_base, 
-						pFormatCtx_Out->streams[VideoIndex]->time_base, (AVRounding)(AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX));  
-
-					pkt.duration = ((pFormatCtx_Out->streams[0]->time_base.den / pFormatCtx_Out->streams[0]->time_base.num) / FPS);
-
-					cur_pts_v = pkt.pts;
+				
+					av_packet_rescale_ts(&pkt, pFormatCtx_Out->streams[VideoIndex]->codec->time_base, pFormatCtx_Out->streams[VideoIndex]->time_base);
+				
 					//写入一个packet.
 					ret = av_interleaved_write_frame(pFormatCtx_Out, &pkt);
 
 					av_free_packet(&pkt);
 				}
-				VideoFrameIndex++;
+				
 			}
 		}
 		else
@@ -1140,7 +1141,10 @@ DWORD WINAPI RecordThreadProc( LPVOID lpParam )
 				pkt_out.data = NULL;
 				pkt_out.size = 0;
 
-				frame->pts = AudioFrameIndex * pFormatCtx_Out->streams[AudioIndex]->codec->frame_size;
+				frame->pts = cur_pts_a;
+				cur_pts_a+=pFormatCtx_Out->streams[AudioIndex]->codec->frame_size;
+				
+				//cur_pts_a=AudioFrameIndex;
 				if (avcodec_encode_audio2(pFormatCtx_Out->streams[AudioIndex]->codec, &pkt_out, frame, &got_picture) < 0)
 				{
 					av_log(NULL,AV_LOG_ERROR,"can not decoder a frame");
@@ -1148,14 +1152,18 @@ DWORD WINAPI RecordThreadProc( LPVOID lpParam )
 				av_frame_free(&frame);
 				if (got_picture) 
 				{
-					pkt_out.stream_index = AudioIndex;
-					pkt_out.pts = AudioFrameIndex * pFormatCtx_Out->streams[AudioIndex]->codec->frame_size;
-					pkt_out.dts = AudioFrameIndex * pFormatCtx_Out->streams[AudioIndex]->codec->frame_size;
-					pkt_out.duration = pFormatCtx_Out->streams[AudioIndex]->codec->frame_size;
-
-					cur_pts_a = pkt_out.pts;
-					
+				
+					av_packet_rescale_ts(&pkt_out, pFormatCtx_Out->streams[AudioIndex]->codec->time_base, pFormatCtx_Out->streams[AudioIndex]->time_base);
+				
 					int ret = av_interleaved_write_frame(pFormatCtx_Out, &pkt_out);
+					if(ret == 0)
+					{
+						av_log(NULL,AV_LOG_PANIC,"write audio ok\r\n");
+					}
+					else
+					{
+						av_log(NULL,AV_LOG_PANIC,"write audio failed\r\n");
+					}
 					
 					av_free_packet(&pkt_out);
 				}
@@ -1163,7 +1171,7 @@ DWORD WINAPI RecordThreadProc( LPVOID lpParam )
 				{
 					//av_log(NULL,AV_LOG_PANIC,"xxxxxxxxxxxxxwrite audio file failed\r\n");
 				}
-				AudioFrameIndex++;
+				
 			}
 		}
 	}
@@ -1245,7 +1253,9 @@ int  SDK_CallMode CloudWalk_RecordStop (void)
 		av_log(NULL,AV_LOG_ERROR,"RecordStop wait quit\r\n");
 		Sleep(10);
 	}
+#ifdef ENABLE_FILTER
 	uninit_filter();
+#endif
 	return ERR_RECORD_OK;
 }
 int GBKToUTF8_V2(const char * lpGBKStr, char * lpUTF8Str,int nUTF8StrLen)
@@ -1311,7 +1321,7 @@ CLOUDWALKFACESDK_API  int  SDK_CallMode CloudWalk_RecordStart (const char* fileP
 		av_log(NULL,AV_LOG_ERROR,"open output file failed\r\n");
 		return ERR_RECORD_OPEN_FILE;
 	}
-#ifdef DRAW_TEXT
+#ifdef ENABLE_FILTER
 	char filter_descr[256] = {0,};
 	char text_buf[256] = {0,};
 	//"drawtext=fontfile=simfang.ttf:fontcolor=red:fontsize=32:shadowcolor=black:text='hello':x=10:y=10"
@@ -1573,4 +1583,10 @@ int _tmain(int argc, _TCHAR* argv[])
 
 	return 0;
 }
+
 #endif
+extern int main_func(int argc, char **argv);
+int  SDK_CallMode CloudWalk_Muxing(int argc, char **argv)
+{
+	return main_func(argc, argv);
+}

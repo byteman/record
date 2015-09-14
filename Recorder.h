@@ -168,6 +168,7 @@ CLOUDWALKFACESDK_API  int  SDK_CallMode CloudWalk_RecordStop (void);
 CLOUDWALKFACESDK_API  int  SDK_CallMode CloudWalk_CloseDevices(void);
 
 
+CLOUDWALKFACESDK_API  int  SDK_CallMode CloudWalk_Muxing(int argc, char **argv);
 #ifdef __cplusplus
 };
 #endif
