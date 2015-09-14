@@ -1041,8 +1041,8 @@ DWORD WINAPI RecordThreadProc( LPVOID lpParam )
 			}
 		}
 		
-		if(_av_compare_ts(cur_pts_v, pFormatCtx_Out->streams[VideoIndex]->time_base, 
-			cur_pts_a,pFormatCtx_Out->streams[AudioIndex]->time_base) <= 0)
+		if(_av_compare_ts(cur_pts_v, pFormatCtx_Out->streams[VideoIndex]->codec->time_base, 
+			cur_pts_a,pFormatCtx_Out->streams[AudioIndex]->codec->time_base) <= 0)
 		{
 			//av_log(NULL,AV_LOG_PANIC,"************write video\r\n");
 			//read data from fifo
@@ -1062,7 +1062,8 @@ DWORD WINAPI RecordThreadProc( LPVOID lpParam )
 					pFormatCtx_Out->streams[VideoIndex]->codec->height);
 				
 				//pts = n * (（1 / timbase）/ fps); 计算pts,编码之前计算pts
-				pEncFrame->pts = VideoFrameIndex * ((pFormatCtx_Video->streams[0]->time_base.den / pFormatCtx_Video->streams[0]->time_base.num) / FPS);
+				pEncFrame->pts = cur_pts_v++;// * ((pFormatCtx_Video->streams[0]->time_base.den / pFormatCtx_Video->streams[0]->time_base.num) / FPS);
+			
 				pEncFrame->format = pFormatCtx_Out->streams[VideoIndex]->codec->pix_fmt;
 				pEncFrame->width = pFormatCtx_Out->streams[VideoIndex]->codec->width;
 				pEncFrame->height=	pFormatCtx_Out->streams[VideoIndex]->codec->height;
@@ -1084,20 +1085,18 @@ DWORD WINAPI RecordThreadProc( LPVOID lpParam )
 				{
  					pkt.stream_index = VideoIndex;
 					//将编码后的包的Pts和dts，转换到输出文件中指定的时基 .在编码后就可以得出包的pts和dts.
-					pkt.pts = av_rescale_q_rnd(pkt.pts, pFormatCtx_Video->streams[0]->time_base, 
-						pFormatCtx_Out->streams[VideoIndex]->time_base, (AVRounding)(AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX));  
-					pkt.dts = av_rescale_q_rnd(pkt.dts,  pFormatCtx_Video->streams[0]->time_base, 
-						pFormatCtx_Out->streams[VideoIndex]->time_base, (AVRounding)(AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX));  
-
-					pkt.duration = ((pFormatCtx_Out->streams[0]->time_base.den / pFormatCtx_Out->streams[0]->time_base.num) / FPS);
-
-					cur_pts_v = pkt.pts;
+				
+					av_packet_rescale_ts(&pkt, pFormatCtx_Out->streams[VideoIndex]->codec->time_base, pFormatCtx_Out->streams[VideoIndex]->time_base);
+				
 					//写入一个packet.
 					ret = av_interleaved_write_frame(pFormatCtx_Out, &pkt);
-
+					if(ret!=0)
+					{
+						av_log(NULL,AV_LOG_ERROR,"write video failed\r\n");
+					}
 					av_free_packet(&pkt);
 				}
-				VideoFrameIndex++;
+				
 			}
 		}
 		else
@@ -1140,7 +1139,10 @@ DWORD WINAPI RecordThreadProc( LPVOID lpParam )
 				pkt_out.data = NULL;
 				pkt_out.size = 0;
 
-				frame->pts = AudioFrameIndex * pFormatCtx_Out->streams[AudioIndex]->codec->frame_size;
+				frame->pts = cur_pts_a;
+				cur_pts_a+=pFormatCtx_Out->streams[AudioIndex]->codec->frame_size;
+				
+				//cur_pts_a=AudioFrameIndex;
 				if (avcodec_encode_audio2(pFormatCtx_Out->streams[AudioIndex]->codec, &pkt_out, frame, &got_picture) < 0)
 				{
 					av_log(NULL,AV_LOG_ERROR,"can not decoder a frame");
@@ -1149,13 +1151,22 @@ DWORD WINAPI RecordThreadProc( LPVOID lpParam )
 				if (got_picture) 
 				{
 					pkt_out.stream_index = AudioIndex;
-					pkt_out.pts = AudioFrameIndex * pFormatCtx_Out->streams[AudioIndex]->codec->frame_size;
-					pkt_out.dts = AudioFrameIndex * pFormatCtx_Out->streams[AudioIndex]->codec->frame_size;
-					pkt_out.duration = pFormatCtx_Out->streams[AudioIndex]->codec->frame_size;
-
-					cur_pts_a = pkt_out.pts;
-					
+					av_packet_rescale_ts(&pkt_out, pFormatCtx_Out->streams[AudioIndex]->codec->time_base, pFormatCtx_Out->streams[AudioIndex]->time_base);
+					av_log(NULL,AV_LOG_PANIC,"begin*** ok\r\n");
+					if(pFormatCtx_Out->streams[0]->cur_dts > pkt_out.dts)
+					{
+						av_log(NULL,AV_LOG_PANIC,"error dts***** ok\r\n");
+					}
 					int ret = av_interleaved_write_frame(pFormatCtx_Out, &pkt_out);
+					av_log(NULL,AV_LOG_PANIC,"end***** ok\r\n");
+					if(ret == 0)
+					{
+						av_log(NULL,AV_LOG_PANIC,"write audio ok\r\n");
+					}
+					else
+					{
+						av_log(NULL,AV_LOG_PANIC,"write audio failed\r\n");
+					}
 					
 					av_free_packet(&pkt_out);
 				}
@@ -1163,7 +1174,7 @@ DWORD WINAPI RecordThreadProc( LPVOID lpParam )
 				{
 					//av_log(NULL,AV_LOG_PANIC,"xxxxxxxxxxxxxwrite audio file failed\r\n");
 				}
-				AudioFrameIndex++;
+				
 			}
 		}
 	}
