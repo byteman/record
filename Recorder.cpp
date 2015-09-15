@@ -265,25 +265,38 @@ end:
  打开视频采集设备
  video: utf8 编码的视频设备名 
 */
-int OpenVideoCapture(const char* psDevName,AVInputFormat *ifmt)
+int OpenVideoCapture(const char* psDevName,AVInputFormat *ifmt,const unsigned  int width,
+													const unsigned  int height,
+													const unsigned  int FrameRate)
 {
 	
 	//char * psDevName = video;//dup_wchar_to_utf8(L"video=USB 视频设备");
 	//UTF8ToGBK(psDevName);
 	//这里可以加参数打开，例如可以指定采集帧率
 	AVDictionary *options = NULL;
-	char buf[10] = {0,};
-	_snprintf_s(buf,10,"%d",FPS);
-	av_dict_set(&options, "framerate", buf, NULL);
-	av_dict_set(&options, "rtbufsize", "13824k", NULL);
+	char buf[16] = {0,};
+	_snprintf_s(buf,16,"%d",FrameRate);
 
-	//av_dict_set(&options, "video_size", "vga", NULL);
-	
-	//av_dict_set(&options,"offset_x","20",0);
+	//av_dict_set(&options, "framerate", buf, NULL);
+	av_dict_set(&options, "rtbufsize", "13824k", NULL);
+	memset(buf,0,16);
+	_snprintf_s(buf,16,"%dx%d",width,height);
+	av_dict_set(&options, "video_size", buf, NULL);
+	//av_dict_set(&options,"list_devices","1",NULL);
+	//av_dict_set(&options,"list_options","true",NULL);
+	//av_dict_set_int(&options,"list_options",1,NULL);
+	//av_opt_set(pFormatCtx_Video->priv_data, "list_options", "true", 0);
 	//The distance from the top edge of the screen or desktop
 	//av_dict_set(&options,"offset_y","40",0);
 	//Video frame size. The default is to capture the full screen
-	av_dict_set(&options,"pix_fmt","rgb24",0);
+	//av_dict_set(&options,"pix_fmt","rgb24",0);
+	if(av_opt_find(&(ifmt->priv_class),"list_options",NULL,0,AV_OPT_SEARCH_FAKE_OBJ))
+	{
+		//av_dict_set_int(&options,"list_options",1,NULL);
+		av_opt_set(pFormatCtx_Video->priv_data, "list_options", "true", 0);
+
+	}
+
 	if(avformat_open_input(&pFormatCtx_Video, psDevName, ifmt, &options)!=0)
 		//if(avformat_open_input(&pFormatCtx_Video, psDevName, ifmt, NULL)!=0)
 	{
@@ -316,8 +329,10 @@ int OpenVideoCapture(const char* psDevName,AVInputFormat *ifmt)
 		av_log(NULL,AV_LOG_ERROR,"Could not open codec.（无法打开解码器）\n");
 		return -5;
 	}
-
-	
+	if( (pCodecCtx_Video->width != 640) || (pCodecCtx_Video->height != 480))
+	{
+		av_log(NULL,AV_LOG_ERROR,"width=%d,height=%d fmt=%d\r\n",pCodecCtx_Video->width,pCodecCtx_Video->height,pCodecCtx_Video->pix_fmt);
+	}
 	
 	return 0;
 }
@@ -711,7 +726,7 @@ int OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioInfo* pAudioI
 	//yuv420p_convert_ctx = sws_getContext(pCodecCtx_Video->width, pCodecCtx_Video->height, pCodecCtx_Video->pix_fmt, 
 	//	pVideoInfo->width, pVideoInfo->height, AV_PIX_FMT_YUV420P, SWS_POINT, NULL, NULL, NULL); 
 
-	yuv420p_convert_ctx = sws_getContext(pCodecCtx_Video->width, pCodecCtx_Video->height, AV_PIX_FMT_BGR24, 
+	yuv420p_convert_ctx = sws_getContext(pCodecCtx_Video->width, pCodecCtx_Video->height,  pCodecCtx_Video->pix_fmt, 
 		pVideoInfo->width, pVideoInfo->height, AV_PIX_FMT_YUV420P, SWS_POINT, NULL, NULL, NULL); 
 	//获取目标帧的大小.
 	frame_size = avpicture_get_size(pFormatCtx_Out->streams[VideoIndex]->codec->pix_fmt, pVideoInfo->width, pVideoInfo->height);
@@ -953,6 +968,10 @@ DWORD WINAPI VideoCapThreadProc( LPVOID lpParam )
 					sws_scale(rgb24_convert_ctx, (const uint8_t* const*)pFrame->data, pFrame->linesize, 0, 
 							pCodecCtx_Video->height, pPreviewFrame->data, pPreviewFrame->linesize);
 						g_video_callback(pPreviewFrame->data[0], pCodecCtx_Video->width ,pCodecCtx_Video->height);
+					if( (pCodecCtx_Video->width!=640) || (pCodecCtx_Video->height!=480))
+					{
+						av_log(NULL,AV_LOG_INFO,"width=%d,height=%d\r\n",pCodecCtx_Video->width,pCodecCtx_Video->height);
+					}
 					
 #endif
 						
@@ -1203,6 +1222,7 @@ DWORD WINAPI RecordThreadProc( LPVOID lpParam )
 				//av_frame_get_buffer(frame, 0);
 
 				EnterCriticalSection(&AudioSection);
+				//从音频fifo中读取编码器需要的样本个数.
 				av_audio_fifo_read(fifo_audio, (void **)frame->data, 
 					pFormatCtx_Out->streams[1]->codec->frame_size);
 				LeaveCriticalSection(&AudioSection);
@@ -1536,7 +1556,8 @@ int  SDK_CallMode   CloudWalk_OpenDevices(
 	videoThreadQuit = 0;
 	recordThreadQuit= 0;
 	FPS = FrameRate;
-	
+	av_log(NULL,AV_LOG_ERROR,"CloudWalk_OpenDevices vidoe=%s,audio=%s width=%d height=%d framerate=%d\r\n",\
+			pVideoDevice,pAudioDevice,width,height,FrameRate);
 	AVInputFormat *pDShowInputFmt = av_find_input_format("dshow");
 	if(pDShowInputFmt == NULL)
 	{
@@ -1544,7 +1565,7 @@ int  SDK_CallMode   CloudWalk_OpenDevices(
 		return ERR_RECORD_DSHOW_OPEN;
 	}
 	
-	if (OpenVideoCapture(getDevicePath("video",pVideoDevice).c_str() ,pDShowInputFmt) < 0)
+	if (OpenVideoCapture(getDevicePath("video",pVideoDevice).c_str() ,pDShowInputFmt,width,height,FrameRate) < 0)
 	{
 		av_log(NULL,AV_LOG_ERROR,"open video failed\r\n");
 		return ERR_RECORD_VIDEO_OPEN;
