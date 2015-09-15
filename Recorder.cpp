@@ -10,6 +10,7 @@ extern "C"
 #include "libswscale/swscale.h"
 #include "libavdevice/avdevice.h"
 #include "libavutil/audio_fifo.h"
+#include "libswresample/swresample.h"
 #include "libavfilter/avfiltergraph.h" 
 #include "libavfilter/buffersink.h"  
 #include "libavfilter/buffersrc.h" 
@@ -36,7 +37,7 @@ extern "C"
 #define   LOCALTIME_R(t)     localtime_r((t),   (struct   tm   *)&tmres)     
 #endif   
 
-#define ENABLE_FILTER 1
+//#define ENABLE_FILTER 1
 AVFormatContext	*pFormatCtx_Video = NULL, *pFormatCtx_Audio = NULL, *pFormatCtx_Out = NULL;
 AVCodecContext	*pCodecCtx_Video;
 AVCodec			*pCodec_Video;
@@ -64,14 +65,17 @@ CRITICAL_SECTION AudioSection, VideoSection;
 
 static int FPS = 25;
 
-SwsContext *yuv420p_convert_ctx; //将源格式转换为YUV420P格式
-SwsContext *rgb24_convert_ctx;   //将源格式转换为RGB24格式
+SwsContext *yuv420p_convert_ctx= NULL; //将源格式转换为YUV420P格式
+SwsContext *rgb24_convert_ctx= NULL;   //将源格式转换为RGB24格式
+struct SwrContext *audio_swr_ctx = NULL;
+
 int frame_size = 0;
 
 uint8_t* pRec_yuv420p_buf = NULL;
 uint8_t* pEnc_yuv420p_buf = NULL;
 AVFrame *pEncFrame = NULL; //录像线程从队列中取出一个YUV420P的数据后，填充到pEncFrame中，来进行编码
 AVFrame* pRecFrame = NULL; //视频采集线程用来将采集到的视频原始数据转换到YUV420P格式的数据帧，用来投递到队列.
+AVFrame* pAudioFrame = NULL;
 static bool bCapture = false;
 
 
@@ -482,6 +486,34 @@ static AVFrame *alloc_picture(enum AVPixelFormat pix_fmt, int width, int height,
 
     return picture;
 }
+static AVFrame *alloc_audio_frame(enum AVSampleFormat sample_fmt,
+                                  uint64_t channel_layout,
+                                  int sample_rate, int nb_samples)
+{
+    AVFrame *frame = av_frame_alloc();
+    int ret;
+
+    if (!frame) {
+        av_log(NULL,AV_LOG_ERROR, "Error allocating an audio frame\n");
+        return NULL;
+    }
+
+    frame->format = sample_fmt;
+    frame->channel_layout = channel_layout;
+    frame->sample_rate = sample_rate;
+    frame->nb_samples = nb_samples;
+
+    if (nb_samples) {
+        ret = av_frame_get_buffer(frame, 0);
+        if (ret < 0) {
+            av_log(NULL,AV_LOG_ERROR, "Error allocating an audio buffer\n");
+            return NULL;
+        }
+    }
+
+    return frame;
+}
+
 /*
 录像的时候才会指定输出宽度和高度，码率，编码类型,帧率
 还有编码器的参数(gop等）
@@ -581,15 +613,37 @@ int OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioInfo* pAudioI
 
 		pOutputCodecCtx = pAudioStream->codec;
 
-		pOutputCodecCtx->sample_rate = pFormatCtx_Audio->streams[0]->codec->sample_rate; //输出的采样率等于采集的采样率
-		pOutputCodecCtx->channel_layout = pFormatCtx_Out->streams[0]->codec->channel_layout;
-		pOutputCodecCtx->channels = av_get_channel_layout_nb_channels(pAudioStream->codec->channel_layout);//输出的通道等于采集的通道数
+		pOutputCodecCtx->sample_fmt = pOutputCodecCtx->codec->sample_fmts?pOutputCodecCtx->codec->sample_fmts[0]:AV_SAMPLE_FMT_FLTP; //输出的采样率等于采集的采样率
+		pOutputCodecCtx->bit_rate = 64000;//pAudioInfo->bitrate;
+		pOutputCodecCtx->sample_rate = 44100;
+		if (pOutputCodecCtx->codec->supported_samplerates) {
+            pOutputCodecCtx->sample_rate = pOutputCodecCtx->codec->supported_samplerates[0];
+            for (int i = 0; pOutputCodecCtx->codec->supported_samplerates[i]; i++) {
+                if (pOutputCodecCtx->codec->supported_samplerates[i] == 44100)
+                    pOutputCodecCtx->sample_rate = 44100;
+            }
+        }
+
+		//pOutputCodecCtx->channel_layout = pFormatCtx_Audio->streams[0]->codec->channel_layout;
+		pOutputCodecCtx->channels = av_get_channel_layout_nb_channels(pOutputCodecCtx->channel_layout);//输出的通道等于采集的通道数
+		pOutputCodecCtx->channel_layout = AV_CH_LAYOUT_STEREO;
+		if (pOutputCodecCtx->codec->channel_layouts) {
+            pOutputCodecCtx->channel_layout = pOutputCodecCtx->codec->channel_layouts[0];
+            for (int i = 0; pOutputCodecCtx->codec->channel_layouts[i]; i++) {
+                if (pOutputCodecCtx->codec->channel_layouts[i] == AV_CH_LAYOUT_STEREO)
+                    pOutputCodecCtx->channel_layout = AV_CH_LAYOUT_STEREO;
+            }
+        }
+		/*
 		if(pOutputCodecCtx->channel_layout == 0)
 		{
-			pOutputCodecCtx->channel_layout = AV_CH_LAYOUT_STEREO;
+			if(pFormatCtx_Out->oformat->video_codec == AV_CODEC_ID_MPEG4)pOutputCodecCtx->channel_layout = AV_CH_LAYOUT_STEREO;
+			else pOutputCodecCtx->channel_layout = AV_CH_LAYOUT_MONO;//AV_CH_LAYOUT_STEREO; 如果麦克风是单声道，但是这是设置的立体音就会导致录下来有杂音.
 			pOutputCodecCtx->channels = av_get_channel_layout_nb_channels(pOutputCodecCtx->channel_layout);
-		}
-		pOutputCodecCtx->sample_fmt = pAudioStream->codec->codec->sample_fmts[0];
+		}*/
+		//pOutputCodecCtx->sample_fmt = pAudioStream->codec->codec->sample_fmts[0];
+		pOutputCodecCtx->channels        = av_get_channel_layout_nb_channels(pOutputCodecCtx->channel_layout);
+       
 		AVRational time_base={1, pAudioStream->codec->sample_rate};
 		pAudioStream->time_base = time_base; //设置
 		
@@ -604,6 +658,24 @@ int OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioInfo* pAudioI
 			av_log(NULL,AV_LOG_ERROR,"can not open output codec!\n");
 			return -5;
 		}
+		pAudioFrame = alloc_audio_frame(pAudioStream->codec->sample_fmt,pAudioStream->codec->channel_layout,pAudioStream->codec->sample_rate,pAudioStream->codec->frame_size);
+		audio_swr_ctx = swr_alloc();
+        if (!audio_swr_ctx) {
+            av_log(NULL,AV_LOG_ERROR, "Could not allocate resampler context\n");
+            return -9;
+        }
+		av_opt_set_int       (audio_swr_ctx, "in_channel_count",   pFormatCtx_Audio->streams[0]->codec->channels,       0);
+        av_opt_set_int       (audio_swr_ctx, "in_sample_rate",     pFormatCtx_Audio->streams[0]->codec->sample_rate,    0);
+		av_opt_set_sample_fmt(audio_swr_ctx, "in_sample_fmt",      pFormatCtx_Audio->streams[0]->codec->sample_fmt, 0);
+        av_opt_set_int       (audio_swr_ctx, "out_channel_count",  pAudioStream->codec->channels,       0);
+        av_opt_set_int       (audio_swr_ctx, "out_sample_rate",    pAudioStream->codec->sample_rate,    0);
+        av_opt_set_sample_fmt(audio_swr_ctx, "out_sample_fmt",     pAudioStream->codec->sample_fmt,     0);
+
+        /* initialize the resampling context */
+        if ((swr_init(audio_swr_ctx)) < 0) {
+            av_log(NULL,AV_LOG_ERROR, "Failed to initialize the resampling context\n");
+            return -10;
+        }
 	}
 	//打开文件
 	if (!(pFormatCtx_Out->oformat->flags & AVFMT_NOFILE))
@@ -1115,24 +1187,40 @@ DWORD WINAPI RecordThreadProc( LPVOID lpParam )
 			if(av_audio_fifo_size(fifo_audio) >= 
 				(pFormatCtx_Out->streams[AudioIndex]->codec->frame_size > 0 ? pFormatCtx_Out->streams[AudioIndex]->codec->frame_size : 1024))
 			{
+
 				AVFrame *frame;
-				frame = av_frame_alloc();
-				frame->nb_samples = pFormatCtx_Out->streams[AudioIndex]->codec->frame_size>0 ? pFormatCtx_Out->streams[AudioIndex]->codec->frame_size: 1024;
-				frame->channel_layout = pFormatCtx_Out->streams[AudioIndex]->codec->channel_layout;
-				frame->format = pFormatCtx_Out->streams[AudioIndex]->codec->sample_fmt;
-				frame->sample_rate = pFormatCtx_Out->streams[AudioIndex]->codec->sample_rate;
-				av_frame_get_buffer(frame, 0);
+				AVFrame *frame2;
+				frame = alloc_audio_frame(pFormatCtx_Audio->streams[0]->codec->sample_fmt,\
+					pFormatCtx_Out->streams[1]->codec->channel_layout,\
+					pFormatCtx_Out->streams[1]->codec->sample_rate,\
+					pFormatCtx_Out->streams[1]->codec->frame_size);
+				frame2 = frame;
+				//frame = av_frame_alloc();
+				//frame->nb_samples = pFormatCtx_Audio->streams[0]->codec->frame_size>0 ? pFormatCtx_Audio->streams[0]->codec->frame_size: 1024;
+				//frame->channel_layout = pFormatCtx_Audio->streams[0]->codec->channel_layout;
+				//frame->format = pFormatCtx_Audio->streams[0]->codec->sample_fmt;
+				//frame->sample_rate = pFormatCtx_Audio->streams[0]->codec->sample_rate;
+				//av_frame_get_buffer(frame, 0);
 
 				EnterCriticalSection(&AudioSection);
 				av_audio_fifo_read(fifo_audio, (void **)frame->data, 
-					(pFormatCtx_Out->streams[AudioIndex]->codec->frame_size > 0 ? pFormatCtx_Out->streams[AudioIndex]->codec->frame_size : 1024));
+					pFormatCtx_Out->streams[1]->codec->frame_size);
 				LeaveCriticalSection(&AudioSection);
 
-				if (pFormatCtx_Out->streams[0]->codec->sample_fmt != pFormatCtx_Audio->streams[AudioIndex]->codec->sample_fmt 
-					|| pFormatCtx_Out->streams[0]->codec->channels != pFormatCtx_Audio->streams[AudioIndex]->codec->channels 
-					|| pFormatCtx_Out->streams[0]->codec->sample_rate != pFormatCtx_Audio->streams[AudioIndex]->codec->sample_rate)
+				if (pFormatCtx_Out->streams[AudioIndex]->codec->sample_fmt != pFormatCtx_Audio->streams[0]->codec->sample_fmt 
+					|| pFormatCtx_Out->streams[AudioIndex]->codec->channels != pFormatCtx_Audio->streams[0]->codec->channels 
+					|| pFormatCtx_Out->streams[AudioIndex]->codec->sample_rate != pFormatCtx_Audio->streams[0]->codec->sample_rate)
 				{
+						int dst_nb_samples;
 					//如果输入和输出的音频格式不一样 需要重采样，这里是一样的就没做
+					  dst_nb_samples = av_rescale_rnd(swr_get_delay(audio_swr_ctx, pFormatCtx_Out->streams[AudioIndex]->codec->sample_rate) + frame->nb_samples,
+                                            pFormatCtx_Out->streams[AudioIndex]->codec->sample_rate, pFormatCtx_Out->streams[AudioIndex]->codec->sample_rate, AV_ROUND_UP);
+					  //av_assert0(dst_nb_samples == frame->nb_samples);
+
+					  int ret = swr_convert(audio_swr_ctx,
+                              pAudioFrame->data, dst_nb_samples,
+                              (const uint8_t **)frame->data, frame->nb_samples);
+					  frame = pAudioFrame;
 				}
 
 				AVPacket pkt_out;
@@ -1149,7 +1237,8 @@ DWORD WINAPI RecordThreadProc( LPVOID lpParam )
 				{
 					av_log(NULL,AV_LOG_ERROR,"can not decoder a frame");
 				}
-				av_frame_free(&frame);
+				if(frame2)
+					av_frame_free(&frame2);
 				if (got_picture) 
 				{
 					pkt_out.stream_index = AudioIndex; //千万要记得加这句话，否则会导致没有音频流.
