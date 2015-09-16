@@ -60,7 +60,7 @@ static VideoInfo gOutVideoInfo;
 int64_t cur_pts_v=0,cur_pts_a=0;
 
 static bool bStartRecord = false;
-static int init_report_file(const char* filename);
+static int init_report_file(string log_config,string log_file );
 CRITICAL_SECTION AudioSection, VideoSection;
 
 static int FPS = 25;
@@ -101,25 +101,39 @@ const char *filter_descr="drawtext=fontfile=simfang.ttf:fontcolor=red:fontsize=3
 //const char *filter_descr="drawtext=fontfile=simfang.ttf: timecode='09\:57\:00\;00': r=30: x=(w-tw)/2: y=h-(2*lh): fontcolor=white: box=1: boxcolor=0x00000000@1";
 //const char *filter_descr = "overlay=5:5";   
 
-static void get_log_filename(char* buffer, int size)
+static string get_log_filename()
 {
 	struct   tm   *tmNow;     
-    time_t   long_time;     
+    time_t   long_time;    
+	char log_path[256] = {0,};
     time(&long_time   );                             /*   Get   time   as   long   integer.   */     
     tmNow   =   LOCALTIME_R(   &long_time   );   /*   Convert   to   local   time.   */    
 
-    _snprintf(buffer,size,"record_%04d%02d%02d%02d%02d%02d.log",tmNow->tm_year+1900,   tmNow->tm_mon   +   1,       
+    _snprintf(log_path,256,"record_%04d%02d%02d%02d%02d%02d.log",tmNow->tm_year+1900,   tmNow->tm_mon   +   1,       
         tmNow->tm_mday,   tmNow->tm_hour,   tmNow->tm_min,   tmNow->tm_sec);     
-
+	return log_path;
 }
-int init_ffmpeg_env()
+string GetProgramDir(HMODULE handle)  
+{   
+    char exeFullPath[MAX_PATH]; // Full path
+    string strPath = "";
+ 
+    GetModuleFileName(handle,exeFullPath,MAX_PATH);
+    strPath=(string)exeFullPath;    // Get full path of the file
+    int pos = strPath.find_last_of('\\', strPath.length());
+    return strPath.substr(0, pos);  // Return the directory without the file name
+}  
+int init_ffmpeg_env(HMODULE handle)
 {
-	char log_file[128] = {0,};
+	
+	string path = GetProgramDir(handle);
+	string log_cfg = path+"\\record.ini";
+	string log_out = path+"\\"+get_log_filename();
 	av_register_all();
 	avdevice_register_all();
 	avfilter_register_all();
-	get_log_filename(log_file,128);
-	init_report_file(log_file);
+
+	init_report_file(log_cfg,log_out);
 	return 0;
 }
 /*
@@ -261,6 +275,39 @@ end:
     return 0;  
 }  
 #endif
+
+static void dshow_dump_params(AVFormatContext	** ctx,const char* psDevName,AVInputFormat *ifmt)
+{
+	AVDictionary *options = NULL;
+	av_log(NULL,AV_LOG_ERROR,"detect camera and audio device \r\n");
+	if(av_opt_find(&(ifmt->priv_class),"list_options",NULL,0,AV_OPT_SEARCH_FAKE_OBJ))
+	{
+		av_dict_set_int(&options,"list_options",1,NULL);
+	}
+	if(avformat_open_input(ctx, psDevName, ifmt, &options)!=0)
+	{
+		
+		
+	}
+	if(options!=NULL)
+		av_dict_free(&options);
+}
+static void dshow_dump_devices(AVFormatContext	** ctx,const char* psDevName,AVInputFormat *ifmt)
+{
+	AVDictionary *options = NULL;
+	av_log(NULL,AV_LOG_ERROR,"detect camera and audio device \r\n");
+	if(av_opt_find(&(ifmt->priv_class),"list_options",NULL,0,AV_OPT_SEARCH_FAKE_OBJ))
+	{
+		av_dict_set_int(&options,"list_devices",1,NULL);
+	}
+	if(avformat_open_input(ctx, psDevName, ifmt, &options)!=0)
+	{
+		
+		
+	}
+	if(options!=NULL)
+		av_dict_free(&options);
+}
 /*
  打开视频采集设备
  video: utf8 编码的视频设备名 
@@ -282,29 +329,17 @@ int OpenVideoCapture(const char* psDevName,AVInputFormat *ifmt,const unsigned  i
 	memset(buf,0,16);
 	_snprintf_s(buf,16,"%dx%d",width,height);
 	av_dict_set(&options, "video_size", buf, NULL);
-	//av_dict_set(&options,"list_devices","1",NULL);
-	//av_dict_set(&options,"list_options","true",NULL);
-	//av_dict_set_int(&options,"list_options",1,NULL);
-	//av_opt_set(pFormatCtx_Video->priv_data, "list_options", "true", 0);
-	//The distance from the top edge of the screen or desktop
-	//av_dict_set(&options,"offset_y","40",0);
-	//Video frame size. The default is to capture the full screen
-	//av_dict_set(&options,"pix_fmt","rgb24",0);
-	if(av_opt_find(&(ifmt->priv_class),"list_options",NULL,0,AV_OPT_SEARCH_FAKE_OBJ))
-	{
-		//av_dict_set_int(&options,"list_options",1,NULL);
-		av_opt_set(pFormatCtx_Video->priv_data, "list_options", "true", 0);
-
-	}
-
+		
+	dshow_dump_devices(&pFormatCtx_Video,psDevName, ifmt);
+	dshow_dump_params(&pFormatCtx_Video,psDevName, ifmt);
 	if(avformat_open_input(&pFormatCtx_Video, psDevName, ifmt, &options)!=0)
 		//if(avformat_open_input(&pFormatCtx_Video, psDevName, ifmt, NULL)!=0)
 	{
 		av_log(NULL,AV_LOG_ERROR,"Couldn't open input stream.（无法打开视频输入流）\n");
 		return -1;
 	}
-	//pFormatCtx_Video->streams[0]->codec->time_base.num = 1;
-	//pFormatCtx_Video->streams[0]->codec->time_base.den = FPS;
+	if(options!=NULL)
+		av_dict_free(&options);
 	if(avformat_find_stream_info(pFormatCtx_Video,NULL)<0)
 	{
 		av_log(NULL,AV_LOG_ERROR,"Couldn't find stream information.（无法获取视频流信息）\n");
@@ -583,9 +618,11 @@ int OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioInfo* pAudioI
 
 		pVideoStream->codec->height = pVideoInfo->height; //输出文件视频流的高度
 		pVideoStream->codec->width  = pVideoInfo->width;  //输出文件视频流的宽度
-		
-		pVideoStream->codec->time_base = pFormatCtx_Video->streams[0]->codec->time_base; //输出文件视频流的高度和输入文件的时基一致.
-		pVideoStream->time_base = pFormatCtx_Video->streams[0]->codec->time_base;
+		AVRational ar;
+		ar.den = 15;
+		ar.num = 1;
+		pVideoStream->codec->time_base = ar;//pFormatCtx_Video->streams[0]->codec->time_base; //输出文件视频流的高度和输入文件的时基一致.
+		pVideoStream->time_base = ar;//pFormatCtx_Video->streams[0]->codec->time_base;
 		pVideoStream->codec->sample_aspect_ratio = pFormatCtx_Video->streams[0]->codec->sample_aspect_ratio;
 		// take first format from list of supported formats
 		//可查看ff_mpeg4_encoder中指定的第一个像素格式，这个是采用MPEG4编码的时候，输入视频帧的像素格式，这里是YUV420P
@@ -1505,31 +1542,26 @@ static int parse_log_level(const char* logdesc)
 	}
 	return AV_LOG_QUIET;
 }
-static int init_report_file(const char* filename)
+static int init_report_file(string log_config,string log_file )
 {
 	char buf[32] = {0,};
-	const char* inifile="c:\\record.ini";
-	char ini_path[MAX_PATH];
-	
-	if(GetCurrentDirectory(MAX_PATH, ini_path) < 0) return 0;
-	strcat(ini_path,"\\record.ini");
 
-	int num = GetPrivateProfileString("log","enable","0", buf,sizeof(buf), ini_path);
+	int num = GetPrivateProfileString("log","enable","0", buf,sizeof(buf), log_config.c_str());
 	if(num < 0) return 0;
 	if( 0 != strcmp(buf,"1"))
 	{
 		return 0;
 	}
 	memset(buf,0,32);
-	num = GetPrivateProfileString("log","level","quiet", buf,sizeof(buf), ini_path);
+	num = GetPrivateProfileString("log","level","quiet", buf,sizeof(buf), log_config.c_str());
 	
 	report_file_level = parse_log_level(buf);
 	
-	report_file = fopen(filename, "w");
+	report_file = fopen(log_file.c_str(), "w");
     if (!report_file) {
         int ret = AVERROR(errno);
         av_log(NULL, AV_LOG_ERROR, "Failed to open report \"%s\": %s\n",
-               filename, strerror(errno));
+               log_file.c_str(), strerror(errno));
         return 1;
     }
 	av_log_set_callback(log_callback_report);

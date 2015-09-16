@@ -1,7 +1,7 @@
 // dllmain.cpp : 定义 DLL 应用程序的入口点。
 #include "stdafx.h"
 
-extern int init_ffmpeg_env();
+extern int init_ffmpeg_env(HMODULE handle);
 extern int CloseDevices();
 extern void FreeAllRes();
 static HMODULE hCrashDLL = 0;
@@ -15,7 +15,7 @@ BOOL APIENTRY DllMain( HMODULE hModule,
 	case DLL_PROCESS_ATTACH:
 	{
 		hCrashDLL = LoadLibrary("CrashHelper.dll");
-		init_ffmpeg_env();
+		init_ffmpeg_env(hModule);
 		break;
 	}
 	case DLL_THREAD_ATTACH:
