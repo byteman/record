@@ -308,6 +308,49 @@ static void dshow_dump_devices(AVFormatContext	** ctx,const char* psDevName,AVIn
 	if(options!=NULL)
 		av_dict_free(&options);
 }
+static int dshow_try_open_devices2(AVFormatContext	** ctx,const char* psDevName,AVInputFormat *ifmt,int width, int height, int fps)
+{
+	AVDictionary *options = NULL;
+	char buf[16] = {0,};
+	_snprintf_s(buf,16,"%d",fps);
+	
+	av_dict_set(&options, "framerate", buf, NULL);
+	memset(buf,0,16);
+	_snprintf_s(buf,16,"%d",width*height*3*fps);
+	av_dict_set(&options, "rtbufsize", buf, NULL);
+	memset(buf,0,16);
+	_snprintf_s(buf,16,"%dx%d",width,height);
+	av_dict_set(&options, "video_size", buf, NULL);
+
+	if(avformat_open_input(&pFormatCtx_Video, psDevName, ifmt, &options)!=0)
+		//if(avformat_open_input(&pFormatCtx_Video, psDevName, ifmt, NULL)!=0)
+	{
+		av_log(NULL,AV_LOG_ERROR,"Couldn't open input stream.（无法打开视频输入流）\n");
+		return -1;
+	}
+
+	if(options!=NULL)
+		av_dict_free(&options);
+	return 0;
+}
+static int dshow_try_open_devices(AVFormatContext	** ctx,const char* psDevName,AVInputFormat *ifmt,int width, int height, int fps)
+{
+	int fps_arr[5] = {10,15,20,25,30};
+	
+	if(dshow_try_open_devices2(ctx,psDevName,ifmt,width,height,fps) == 0) return fps;
+	av_log(NULL,AV_LOG_ERROR,"%d orig fps can not open\r\n",fps);
+	for(int i = 10; i <= 30; i++)
+	{
+		
+		if(dshow_try_open_devices2(ctx,psDevName,ifmt,width,height,i) == 0)
+		{
+			av_log(NULL,AV_LOG_ERROR,"%d fps open ok\r\n",i);
+			return i;
+		}
+		av_log(NULL,AV_LOG_ERROR,"%d fps can not open\r\n",i);
+	}
+	return 0;
+}
 /*
  打开视频采集设备
  video: utf8 编码的视频设备名 
@@ -316,30 +359,14 @@ int OpenVideoCapture(const char* psDevName,AVInputFormat *ifmt,const unsigned  i
 													const unsigned  int height,
 													const unsigned  int FrameRate)
 {
-	
-	//char * psDevName = video;//dup_wchar_to_utf8(L"video=USB 视频设备");
-	//UTF8ToGBK(psDevName);
-	//这里可以加参数打开，例如可以指定采集帧率
-	AVDictionary *options = NULL;
-	char buf[16] = {0,};
-	_snprintf_s(buf,16,"%d",FrameRate);
-
-	//av_dict_set(&options, "framerate", buf, NULL);
-	av_dict_set(&options, "rtbufsize", "13824k", NULL);
-	memset(buf,0,16);
-	_snprintf_s(buf,16,"%dx%d",width,height);
-	av_dict_set(&options, "video_size", buf, NULL);
-		
-	dshow_dump_devices(&pFormatCtx_Video,psDevName, ifmt);
-	dshow_dump_params(&pFormatCtx_Video,psDevName, ifmt);
-	if(avformat_open_input(&pFormatCtx_Video, psDevName, ifmt, &options)!=0)
-		//if(avformat_open_input(&pFormatCtx_Video, psDevName, ifmt, NULL)!=0)
+	int fps = 0;
+	dshow_dump_params(&pFormatCtx_Video,psDevName,ifmt);
+	dshow_dump_devices(&pFormatCtx_Video,psDevName,ifmt);
+	fps = dshow_try_open_devices(&pFormatCtx_Video,psDevName,ifmt,width,height,FrameRate);
+	if(fps == 0) 
 	{
-		av_log(NULL,AV_LOG_ERROR,"Couldn't open input stream.（无法打开视频输入流）\n");
 		return -1;
 	}
-	if(options!=NULL)
-		av_dict_free(&options);
 	if(avformat_find_stream_info(pFormatCtx_Video,NULL)<0)
 	{
 		av_log(NULL,AV_LOG_ERROR,"Couldn't find stream information.（无法获取视频流信息）\n");
@@ -621,15 +648,15 @@ int OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioInfo* pAudioI
 		AVRational ar;
 		ar.den = 15;
 		ar.num = 1;
-		pVideoStream->codec->time_base = ar;//pFormatCtx_Video->streams[0]->codec->time_base; //输出文件视频流的高度和输入文件的时基一致.
-		pVideoStream->time_base = ar;//pFormatCtx_Video->streams[0]->codec->time_base;
+		pVideoStream->codec->time_base = pFormatCtx_Video->streams[0]->codec->time_base; //输出文件视频流的高度和输入文件的时基一致.
+		pVideoStream->time_base = pFormatCtx_Video->streams[0]->codec->time_base;
 		pVideoStream->codec->sample_aspect_ratio = pFormatCtx_Video->streams[0]->codec->sample_aspect_ratio;
 		// take first format from list of supported formats
 		//可查看ff_mpeg4_encoder中指定的第一个像素格式，这个是采用MPEG4编码的时候，输入视频帧的像素格式，这里是YUV420P
 		pVideoStream->codec->pix_fmt = pFormatCtx_Out->streams[VideoIndex]->codec->codec->pix_fmts[0]; //像素格式，采用MPEG4支持的第一个格式
 		
 		//CBR_Set(pVideoStream->codec, pVideoInfo->bitrate); //设置固定码率
-		VBR_Set(pVideoStream->codec, pVideoInfo->bitrate, 2*pVideoInfo->bitrate  , pVideoInfo->bitrate/2);
+		VBR_Set(pVideoStream->codec, pVideoInfo->bitrate, 2*pVideoInfo->bitrate  , 0);
 		
 		if (pFormatCtx_Out->oformat->flags & AVFMT_GLOBALHEADER)
 			pVideoStream->codec->flags |= CODEC_FLAG_GLOBAL_HEADER;
@@ -1617,7 +1644,7 @@ int  SDK_CallMode   CloudWalk_OpenDevices(
 
 	//设置需要转换的目标格式为RGB24, 尺寸就是预览图像的大小.
 	rgb24_convert_ctx = sws_getContext(pCodecCtx_Video->width, pCodecCtx_Video->height, pCodecCtx_Video->pix_fmt, 
-		pCodecCtx_Video->width, pCodecCtx_Video->height, AV_PIX_FMT_RGB24, SWS_BICUBIC, NULL, NULL, NULL); 
+		pCodecCtx_Video->width, pCodecCtx_Video->height, AV_PIX_FMT_BGR24, SWS_BICUBIC, NULL, NULL, NULL); 
 	
 	//start cap screen thread
 	CreateThread( NULL, 0, VideoCapThreadProc, 0, 0, NULL);

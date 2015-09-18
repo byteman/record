@@ -1,11 +1,36 @@
 #include "stdafx.h"
+#include <atlbase.h>
 #include "CaptureDevices.h"
+
+
+#ifdef	__cplusplus
+extern "C"
+{
+#endif
+#include "libavcodec/avcodec.h"
+#include "libavformat/avformat.h"
+#include "libswscale/swscale.h"
+#include "libavdevice/avdevice.h"
+#include "libavutil/audio_fifo.h"
+#include "libswresample/swresample.h"
+#include "libavfilter/avfiltergraph.h" 
+#include "libavfilter/buffersink.h"  
+#include "libavfilter/buffersrc.h" 
+
+#ifdef __cplusplus
+};
+#endif
+
+#define RLS(x)	if (x) { x->Release(); x = NULL; }
+#define ARRAY_NUM(arr)	(sizeof(arr)/sizeof(arr[0]))
+
 
 
 CaptureDevices::CaptureDevices():
 	enumMonikerVideo(NULL),
 	enumMonikerAudio(NULL)
 {
+	
 	CoInitialize(0);
 	Enumerate();
 }
