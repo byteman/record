@@ -132,7 +132,7 @@ int init_ffmpeg_env(HMODULE handle)
 	av_register_all();
 	avdevice_register_all();
 	avfilter_register_all();
-
+	avformat_network_init();
 	init_report_file(log_cfg,log_out);
 	return 0;
 }
@@ -360,13 +360,20 @@ int OpenVideoCapture(const char* psDevName,AVInputFormat *ifmt,const unsigned  i
 													const unsigned  int FrameRate)
 {
 	int fps = 0;
-	dshow_dump_params(&pFormatCtx_Video,psDevName,ifmt);
-	dshow_dump_devices(&pFormatCtx_Video,psDevName,ifmt);
-	fps = dshow_try_open_devices(&pFormatCtx_Video,psDevName,ifmt,width,height,FrameRate);
-	if(fps == 0) 
+	//dshow_dump_params(&pFormatCtx_Video,psDevName,ifmt);
+	//dshow_dump_devices(&pFormatCtx_Video,psDevName,ifmt);
+	//fps = dshow_try_open_devices(&pFormatCtx_Video,psDevName,ifmt,width,height,FrameRate);
+	AVDictionary *options = NULL;
+	
+	av_dict_set(&options, "rtsp_flags ", "listen", NULL);
+	//if(avformat_open_input(&pFormatCtx_Video, psDevName, NULL, NULL)!=0)
+	if(avformat_open_input(&pFormatCtx_Video, psDevName, ifmt, &options)!=0)
+		//if(avformat_open_input(&pFormatCtx_Video, psDevName, ifmt, NULL)!=0)
 	{
+		av_log(NULL,AV_LOG_ERROR,"Couldn't open input stream.（无法打开视频输入流）\n");
 		return -1;
 	}
+	av_dict_free(&options);
 	if(avformat_find_stream_info(pFormatCtx_Video,NULL)<0)
 	{
 		av_log(NULL,AV_LOG_ERROR,"Couldn't find stream information.（无法获取视频流信息）\n");
@@ -1626,6 +1633,66 @@ int  SDK_CallMode   CloudWalk_OpenDevices(
 	FPS = FrameRate;
 	av_log(NULL,AV_LOG_ERROR,"CloudWalk_OpenDevices vidoe=%s,audio=%s width=%d height=%d framerate=%d\r\n",\
 			pVideoDevice,pAudioDevice,width,height,FrameRate);
+	AVInputFormat *pDShowInputFmt = av_find_input_format("rtsp");
+	if(pDShowInputFmt == NULL)
+	{
+		av_log(NULL,AV_LOG_ERROR,"open dshow failed\r\n");
+		return ERR_RECORD_DSHOW_OPEN;
+	}
+	
+	if (OpenVideoCapture("rtsp://127.0.0.1:5555/ok" ,pDShowInputFmt,width,height,FrameRate) < 0)
+	{
+		av_log(NULL,AV_LOG_ERROR,"open video failed\r\n");
+		return ERR_RECORD_VIDEO_OPEN;
+	}
+	if (OpenAudioCapture(getDevicePath("audio",pAudioDevice).c_str(),pDShowInputFmt) < 0)
+	{
+		av_log(NULL,AV_LOG_ERROR,"open audio failed\r\n");
+		return ERR_RECORD_AUDIO_OPEN;
+	}
+
+	//信号初始化为无信号，然后信号产生后，需要手工复位，否则信号一直有效.
+	gAudioHandle = CreateEvent(NULL,TRUE,FALSE,NULL);
+	gVideoHandle = CreateEvent(NULL,TRUE,FALSE,NULL);
+	gRecordHandle = CreateEvent(NULL,TRUE,FALSE,NULL);
+	InitializeCriticalSection(&VideoSection);
+	InitializeCriticalSection(&AudioSection);
+
+	//设置需要转换的目标格式为RGB24, 尺寸就是预览图像的大小.
+	rgb24_convert_ctx = sws_getContext(pCodecCtx_Video->width, pCodecCtx_Video->height, pCodecCtx_Video->pix_fmt, 
+		pCodecCtx_Video->width, pCodecCtx_Video->height, AV_PIX_FMT_BGR24, SWS_BICUBIC, NULL, NULL, NULL); 
+	
+	//start cap screen thread
+	CreateThread( NULL, 0, VideoCapThreadProc, 0, 0, NULL);
+	//start cap audio thread
+	CreateThread( NULL, 0, AudioCapThreadProc, 0, 0, NULL);
+	
+	
+	bCapture = true;
+	g_video_callback = video_callback; 
+	return 0;
+
+}
+int  SDK_CallMode   CloudWalk_OpenDevices2(
+													const char* pVideoDevice,
+													const char* pAudioDevice,
+													const unsigned  int width,
+													const unsigned  int height,
+													const unsigned  int FrameRate,
+													int sampleRateInHz,
+													int channelConfig,
+													Video_Callback video_callback)
+{
+
+	
+	
+
+	audioThreadQuit = 0;
+	videoThreadQuit = 0;
+	recordThreadQuit= 0;
+	FPS = FrameRate;
+	av_log(NULL,AV_LOG_ERROR,"CloudWalk_OpenDevices vidoe=%s,audio=%s width=%d height=%d framerate=%d\r\n",\
+			pVideoDevice,pAudioDevice,width,height,FrameRate);
 	AVInputFormat *pDShowInputFmt = av_find_input_format("dshow");
 	if(pDShowInputFmt == NULL)
 	{
@@ -1666,6 +1733,7 @@ int  SDK_CallMode   CloudWalk_OpenDevices(
 	return 0;
 
 }
+
 
 //不能再dll卸载的时候调用此函数，否则会导致程序无法退出，摄像头没法再次启用.
 void FreeAllRes()
