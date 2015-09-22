@@ -608,7 +608,7 @@ int OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioInfo* pAudioI
 	
 
 	//为输出文件分配FormatContext
-	avformat_alloc_output_context2(&pFormatCtx_Out, NULL, NULL, outFileName); //这个函数调用后pFormatCtx_Out->oformat中就猜出来了目标编码器
+	avformat_alloc_output_context2(&pFormatCtx_Out, NULL, "rtsp", outFileName); //这个函数调用后pFormatCtx_Out->oformat中就猜出来了目标编码器
 	//创建视频流，并且视频编码器初始化.
 	if (pFormatCtx_Video->streams[0]->codec->codec_type == AVMEDIA_TYPE_VIDEO)
 	{
@@ -631,6 +631,7 @@ int OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioInfo* pAudioI
 		{
 			pFormatCtx_Out->oformat->video_codec = AV_CODEC_ID_MPEG4;
 		}
+		pFormatCtx_Out->oformat->video_codec =AV_CODEC_ID_H264;
 		pVideoStream->codec->codec =  avcodec_find_encoder(pFormatCtx_Out->oformat->video_codec);
 		//pVideoStream->codec->codec  = avcodec_find_encoder(AV_CODEC_ID_FLV1); //视频流的编码器为MPEG4
 #endif
@@ -671,7 +672,15 @@ int OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioInfo* pAudioI
         pVideoStream->codec->qcompress = 0.6;
 #endif
 		//pVideoStream->rc_lookahead=0;//这样就不会延迟编码器的输出了
-		//av_opt_set(pVideoStream->codec->priv_data, "preset", "slow", 0);
+		av_opt_set(pVideoStream->codec->priv_data, "preset", "slow", 0);
+		av_opt_set(pVideoStream->codec->priv_data, "pre", "medium", 0);
+		
+		pVideoStream->codec->me_range = 16;  
+        pVideoStream->codec->max_qdiff = 4;  
+        pVideoStream->codec->qmin = 10;  
+        pVideoStream->codec->qmax = 51;  
+        pVideoStream->codec->qcompress = 0.6;  
+
 		if ((avcodec_open2(pVideoStream->codec, pVideoStream->codec->codec, &options)) < 0)
 		{
 			av_log(NULL,AV_LOG_ERROR,"can not open the encoder\n");
