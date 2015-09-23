@@ -365,7 +365,7 @@ int OpenVideoCapture(const char* psDevName,AVInputFormat *ifmt,const unsigned  i
 	//fps = dshow_try_open_devices(&pFormatCtx_Video,psDevName,ifmt,width,height,FrameRate);
 	AVDictionary *options = NULL;
 	
-	av_dict_set(&options, "rtsp_flags ", "listen", NULL);
+	//av_dict_set(&options, "rtsp_flags ", "listen", NULL);
 	//if(avformat_open_input(&pFormatCtx_Video, psDevName, NULL, NULL)!=0)
 	if(avformat_open_input(&pFormatCtx_Video, psDevName, ifmt, &options)!=0)
 		//if(avformat_open_input(&pFormatCtx_Video, psDevName, ifmt, NULL)!=0)
@@ -374,17 +374,18 @@ int OpenVideoCapture(const char* psDevName,AVInputFormat *ifmt,const unsigned  i
 		return -1;
 	}
 	av_dict_free(&options);
-	if(avformat_find_stream_info(pFormatCtx_Video,NULL)<0)
+	//if(avformat_find_stream_info(pFormatCtx_Video,NULL)<0)
 	{
 		av_log(NULL,AV_LOG_ERROR,"Couldn't find stream information.（无法获取视频流信息）\n");
-		return -2;
+		//return -2;
 	}
-	if (pFormatCtx_Video->streams[0]->codec->codec_type != AVMEDIA_TYPE_VIDEO)
+	int video = 0;
+	if (pFormatCtx_Video->streams[video]->codec->codec_type != AVMEDIA_TYPE_VIDEO)
 	{
 		av_log(NULL,AV_LOG_ERROR,"Couldn't find video stream information.（无法获取视频流信息）\n");
 		return -3;
 	}
-	pCodecCtx_Video = pFormatCtx_Video->streams[0]->codec;
+	pCodecCtx_Video = pFormatCtx_Video->streams[video]->codec;
 	//这里的pCodecCtx_Video->codec_id是什么时候初始化的? 在dshow.c中的dshow_add_device中设置了 codec->codec_id = AV_CODEC_ID_RAWVIDEO;
 
 	pCodec_Video = avcodec_find_decoder(pCodecCtx_Video->codec_id);
@@ -403,6 +404,8 @@ int OpenVideoCapture(const char* psDevName,AVInputFormat *ifmt,const unsigned  i
 		av_log(NULL,AV_LOG_ERROR,"width=%d,height=%d fmt=%d\r\n",pCodecCtx_Video->width,pCodecCtx_Video->height,pCodecCtx_Video->pix_fmt);
 	}
 	
+	
+
 	return 0;
 }
 
@@ -1002,7 +1005,7 @@ DWORD WINAPI VideoCapThreadProc( LPVOID lpParam )
 		{
 			continue;
 		}
-		if(packet.stream_index == 0)
+		if(packet.stream_index == 1)
 		{
 			//解码视频流 
 			if (avcodec_decode_video2(pCodecCtx_Video, pFrame, &got_picture, &packet) < 0)
@@ -1645,11 +1648,11 @@ int  SDK_CallMode   CloudWalk_OpenDevices(
 		av_log(NULL,AV_LOG_ERROR,"open video failed\r\n");
 		return ERR_RECORD_VIDEO_OPEN;
 	}
-	if (OpenAudioCapture(getDevicePath("audio",pAudioDevice).c_str(),pDShowInputFmt) < 0)
-	{
-		av_log(NULL,AV_LOG_ERROR,"open audio failed\r\n");
-		return ERR_RECORD_AUDIO_OPEN;
-	}
+	//if (OpenAudioCapture(getDevicePath("audio",pAudioDevice).c_str(),pDShowInputFmt) < 0)
+	//{
+	//	av_log(NULL,AV_LOG_ERROR,"open audio failed\r\n");
+	//	return ERR_RECORD_AUDIO_OPEN;
+	//}
 
 	//信号初始化为无信号，然后信号产生后，需要手工复位，否则信号一直有效.
 	gAudioHandle = CreateEvent(NULL,TRUE,FALSE,NULL);
@@ -1665,7 +1668,7 @@ int  SDK_CallMode   CloudWalk_OpenDevices(
 	//start cap screen thread
 	CreateThread( NULL, 0, VideoCapThreadProc, 0, 0, NULL);
 	//start cap audio thread
-	CreateThread( NULL, 0, AudioCapThreadProc, 0, 0, NULL);
+	//CreateThread( NULL, 0, AudioCapThreadProc, 0, 0, NULL);
 	
 	
 	bCapture = true;
