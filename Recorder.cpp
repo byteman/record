@@ -600,6 +600,7 @@ static AVFrame *alloc_audio_frame(enum AVSampleFormat sample_fmt,
 int OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioInfo* pAudioInfo,SubTitleInfo* pSubTitle)
 {
 	AVStream *pVideoStream = NULL, *pAudioStream = NULL;
+	int err  = 0;
 	if(pFormatCtx_Video == NULL || pFormatCtx_Audio == NULL)
 	{
 		av_log(NULL,AV_LOG_ERROR,"please opendevices first\r\n");
@@ -608,7 +609,12 @@ int OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioInfo* pAudioI
 	
 
 	//为输出文件分配FormatContext
-	avformat_alloc_output_context2(&pFormatCtx_Out, NULL, NULL, outFileName); //这个函数调用后pFormatCtx_Out->oformat中就猜出来了目标编码器
+	err = avformat_alloc_output_context2(&pFormatCtx_Out, NULL, "flv", outFileName); //这个函数调用后pFormatCtx_Out->oformat中就猜出来了目标编码器
+	if(err != 0)
+	{
+		av_log(NULL,AV_LOG_ERROR,"avformat_alloc_output_context2 failed\r\n");
+		return -2;
+	}
 	//创建视频流，并且视频编码器初始化.
 	if (pFormatCtx_Video->streams[0]->codec->codec_type == AVMEDIA_TYPE_VIDEO)
 	{
@@ -655,8 +661,8 @@ int OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioInfo* pAudioI
 		//可查看ff_mpeg4_encoder中指定的第一个像素格式，这个是采用MPEG4编码的时候，输入视频帧的像素格式，这里是YUV420P
 		pVideoStream->codec->pix_fmt = pFormatCtx_Out->streams[VideoIndex]->codec->codec->pix_fmts[0]; //像素格式，采用MPEG4支持的第一个格式
 		
-		//CBR_Set(pVideoStream->codec, pVideoInfo->bitrate); //设置固定码率
-		VBR_Set(pVideoStream->codec, pVideoInfo->bitrate, 2*pVideoInfo->bitrate  , 0);
+		CBR_Set(pVideoStream->codec, pVideoInfo->bitrate); //设置固定码率
+		//VBR_Set(pVideoStream->codec, pVideoInfo->bitrate, 2*pVideoInfo->bitrate  , 0);
 		
 		if (pFormatCtx_Out->oformat->flags & AVFMT_GLOBALHEADER)
 			pVideoStream->codec->flags |= CODEC_FLAG_GLOBAL_HEADER;
