@@ -89,6 +89,7 @@ typedef  int (*Video_Callback)(unsigned char* rgb24, int width, int height);
 */
 CLOUDWALKFACESDK_API  int  SDK_CallMode   CloudWalk_OpenDevices(
 													const char* pVideoDevice,
+													const char* pVideoDevice2,
 													const char* pAudioDevice,
 													const  unsigned  int width,
 													const unsigned  int height,
