@@ -54,11 +54,12 @@ public:
 private:
 	std::string _file;
 	FILE* _fp;
-	unsigned char *_buffer;
+	//unsigned char *_buffer;
 	int _width,_height,_fps;
 	bool isReadOnly;
 	AVFrame* _frame;
 	int _frameSize;
 	AVPixelFormat _format;
+	unsigned char _buffer[320*240*3];
 };
 #endif

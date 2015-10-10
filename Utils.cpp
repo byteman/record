@@ -472,13 +472,15 @@ bool MyFile::Open(const char* file,AVPixelFormat format, int width, int height,i
 
 	_frameSize = avpicture_get_size(format, width, height);
 
-	
+	_fp = fopen(file,"rb");
 	if(_fp == NULL) return false;
+	
 
 	_frame = alloc_picture(format,width,height,16);
 	if(_frame == NULL) return false;
-	_fp = fopen(file,"rb");
+	
 	_format = format;
+	ReadBuffer(_buffer,320*240*1.5);
 	return (_frame!=NULL); 
 }
 AVFrame*  MyFile::ReadFrame()
@@ -514,11 +516,20 @@ bool  MyFile::ReadRGB24(AVFrame* frame)
 }
 bool MyFile::ReadYUV420P(AVFrame* frame)
 {
+	
 	int ret = 0;
 
+	memcpy(frame->data[0],_buffer,frame->width*frame->height);
+	memcpy(frame->data[1],_buffer+frame->width*frame->height,frame->width*frame->height/4);
+	memcpy(frame->data[2],_buffer+(frame->width*frame->height)+(frame->width*frame->height)/4,frame->width*frame->height/4);
+	return true;
+
+
+
+	fseek(_fp,0,SEEK_CUR);
 	ret += ReadBuffer(frame->data[0],frame->width*frame->height);
-	ret += ReadBuffer(frame->data[0],frame->width*frame->height/4);
-	ret += ReadBuffer(frame->data[0],frame->width*frame->height/4);
+	ret += ReadBuffer(frame->data[1],frame->width*frame->height/4);
+	ret += ReadBuffer(frame->data[2],frame->width*frame->height/4);
 
 	return (ret == _frameSize);
 

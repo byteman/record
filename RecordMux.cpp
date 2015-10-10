@@ -36,7 +36,8 @@ static AVFrame* pRecFrame = NULL;
 
 SwrContext *audio_swr_ctx = NULL;
 
-
+MyFile file1;
+MyFile file2;
 /*
 录像的时候才会指定输出宽度和高度，码率，编码类型,帧率
 还有编码器的参数(gop等）
@@ -232,13 +233,15 @@ RecordMux::RecordMux()
 	recordThreadQuit = true;
 	cur_pts_v = cur_pts_a = 0;
 	pDShowInputFmt = NULL;
-
+#if 0
 	MyFile f("111.yuv");
 	f.FillBuffer(0x0, 320*240*1);
 	f.FillBuffer(0x80, 320*240/4);
 	f.FillBuffer(0x80, 320*240/4);
 	MyFile f2("222.yuv");
 	f2.FillBuffer(0xFF, 320*240*1.5);
+#endif
+	
 }
 /*
 启动录像操作
@@ -304,7 +307,7 @@ AVFrame* RecordMux::MergeFrame(AVFrame* frame1, AVFrame* frame2)
 {
 	int offset = 0;
 	int i = 0;
-#if 1
+#if 0
 	for( i = 0; i < frame1->height; i++)
 	{
 		memset(pRecFrame->data[0]+offset,0x0,frame1->width);
@@ -339,6 +342,8 @@ AVFrame* RecordMux::MergeFrame(AVFrame* frame1, AVFrame* frame2)
 	
 	return NULL;
 #endif
+	//file1.ReadYUV420P(frame1);
+	//file2.ReadYUV420P(frame2);
 	offset = 0;
 	for( i = 0; i < frame1->height; i++)
 	{
@@ -375,9 +380,9 @@ void RecordMux::Run()
 	bStartRecord = true;
 	cur_pts_v = cur_pts_a = 0; //复位音视频的pts
 	VideoFrameIndex = AudioFrameIndex = 0; //复位音视频的帧序.
-	MyFile file("1.yuv");
-	MyFile file2("2.yuv");
-	MyFile file3("12.yuv");
+	MyFile file11("1.yuv");
+	MyFile file22("2.yuv");
+	MyFile file33("12.yuv");
 	while(bStartRecord) //启动了录像标志，才进行录像，否则退出线程
 	{
 
@@ -391,10 +396,11 @@ void RecordMux::Run()
 				AVPacket pkt;
 
 				pSecordFrame = pVideoCap2->GetLastSample();
-				file.WriteFrame(pEncFrame);
-				file2.WriteFrame(pSecordFrame);
+				
 				MergeFrame(pEncFrame,pSecordFrame);
-				file3.WriteFrame(pRecFrame);
+				file11.WriteFrame(pEncFrame);
+				file22.WriteFrame(pSecordFrame);
+				file33.WriteFrame(pRecFrame);
 				ptmp = pRecFrame;
 				//pts = n * (（1 / timbase）/ fps); 计算pts,编码之前计算pts
 				ptmp->pts = cur_pts_v++;// * ((pFormatCtx_Video->streams[0]->time_base.den / pFormatCtx_Video->streams[0]->time_base.num) / FPS);
@@ -535,6 +541,8 @@ int RecordMux::OpenAudio(const char * psDevName)
 }
 int RecordMux::Init()
 {
+	file1.Open("111.yuv",AV_PIX_FMT_YUV420P,320,240,10);
+	file2.Open("222.yuv",AV_PIX_FMT_YUV420P,320,240,10);
 	pDShowInputFmt = av_find_input_format("dshow");
 	return 0;
 }
