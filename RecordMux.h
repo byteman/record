@@ -7,9 +7,17 @@ class RecordMux
 {
 public:
 	RecordMux();
+	int Init();
+	int OpenCamera(const char* psDevName,const unsigned  int width,
+													const unsigned  int height,
+													const unsigned  int FrameRate,AVPixelFormat format, Video_Callback pCbFunc);
+
+	int OpenAudio(const char * psDevName);
 	int Start(const char* filePath,VideoInfo* pVideoInfo, AudioInfo* pAudioInfo,SubTitleInfo* pSubTitle);
 	int Stop();
 	void Run();
+	int Close();
+	
 private:
 	int OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioInfo* pAudioInfo,SubTitleInfo* pSubTitle);
 	VideoCap* pVideoCap;
@@ -23,5 +31,7 @@ private:
 	CRITICAL_SECTION VideoSection;
 	unsigned char* pEnc_yuv420p_buf;
 	bool recordThreadQuit;
+	AVInputFormat *pDShowInputFmt;
+	
 };
 #endif

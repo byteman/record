@@ -9,7 +9,11 @@ public:
 	int Open(const char * psDevName, AVInputFormat *ifmt);
 	int Close();
 	void Run( );
+	bool StartRecord();
+	int  StopRecord();
 	AVCodecContext* GetCodecContext();
+	int GetSample(void **data, int nb_samples);
+	int SimpleSize();
 private:
 	AVFormatContext* pFormatContext;
 	AVCodecContext*  pCodecContext;

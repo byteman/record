@@ -35,9 +35,8 @@ static AVFrame* pEncFrame = NULL;
 static AVFrame* pRecFrame = NULL;
 
 SwrContext *audio_swr_ctx = NULL;
-SwsContext *yuv420p_convert_ctx = NULL;
 
-AVFifoBuffer	*fifo_video = NULL;
+
 /*
 录像的时候才会指定输出宽度和高度，码率，编码类型,帧率
 还有编码器的参数(gop等）
@@ -204,33 +203,11 @@ int RecordMux::OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioIn
 		av_log(NULL,AV_LOG_ERROR,"can not write the header of the output file!\n");
 		return -7;
 	}
-	
 
-	//pVideoStream->codec->time_base = pFormatCtx_Video->streams[0]->codec->time_base;
-	//按输出的录像视频分辨率大小和编码输入格式分配一个AVFrame，并且填充对应的数据区。
-	pEncFrame  = av_frame_alloc();
-	//用于录像的一帧视频的大小
-	gYuv420FrameSize = avpicture_get_size(pFmtContext->streams[VideoIndex]->codec->pix_fmt, 
-		pFmtContext->streams[VideoIndex]->codec->width, pFmtContext->streams[VideoIndex]->codec->height);
-	pEnc_yuv420p_buf = new uint8_t[gYuv420FrameSize];
-
-	avpicture_fill((AVPicture *)pEncFrame, pEnc_yuv420p_buf, 
-		pFmtContext->streams[VideoIndex]->codec->pix_fmt, 
-		pFmtContext->streams[VideoIndex]->codec->width, 
-		pFmtContext->streams[VideoIndex]->codec->height);
-
-	yuv420p_convert_ctx = sws_getContext(pVideoCap->GetWidth(), pVideoCap->GetHeight(),  pVideoCap->GetFormat(), 
-		pVideoInfo->width, pVideoInfo->height, AV_PIX_FMT_YUV420P, SWS_POINT, NULL, NULL, NULL); 
 	//获取目标帧的大小.
 	frame_size = avpicture_get_size(pFmtContext->streams[VideoIndex]->codec->pix_fmt, pVideoInfo->width, pVideoInfo->height);
 	//申请30帧目标帧大小做video的fifo
-	fifo_video = av_fifo_alloc(30 * frame_size);
-	if(fifo_video == NULL)
-	{
-		av_log(NULL,AV_LOG_ERROR,"alloc pic fifo failed\r\n");
-		return -8;
-	}
-
+	
 	pRecFrame = alloc_picture(AV_PIX_FMT_YUV420P,pVideoInfo->width,pVideoInfo->height,16);
 
 	return 0;
@@ -256,16 +233,63 @@ RecordMux::RecordMux()
 	pAudioCap = new AudioCap();
 	bStartRecord = false;
 	bCapture = false;
+	recordThreadQuit = true;
 	cur_pts_v = cur_pts_a = 0;
+	pDShowInputFmt = NULL;
 
 }
+/*
+启动录像操作
+*/
 int RecordMux::Start(const char* filePath,VideoInfo* pVideoInfo, AudioInfo* pAudioInfo,SubTitleInfo* pSubTitle)
 {
-		CreateThread( NULL, 0, RecordThreadProc, this, 0, NULL);
+	
+	int ret = OpenOutPut(filePath,pVideoInfo,pAudioInfo,pSubTitle);
+	pVideoCap->StartRecord(AV_PIX_FMT_YUV420P, pVideoInfo->width, pVideoInfo->height);
+	pAudioCap->StartRecord();
+	CreateThread( NULL, 0, RecordThreadProc, this, 0, NULL);
+	return ret;
 }
+/*
+停止录像操作
+*/
 int RecordMux::Stop()
 {
+	//如果还没有启动录像，就直接返回.
+	if(false == bStartRecord)
+	{
+		return ERR_RECORD_OK;
+	}
+	bStartRecord = false;
+	pVideoCap->StopRecord();
+	pAudioCap->StopRecord();
+	while(!recordThreadQuit)
+	{
+		av_log(NULL,AV_LOG_ERROR,"RecordStop wait quit\r\n");
+		Sleep(10);
+	}
+	return 0;
+}
+/*
+关闭所有设备.
+*/
+int RecordMux::Close()
+{
+	pAudioCap->Close();
+	pVideoCap->Close();
+
+	return 0;
+}
+bool AudioFmtEqual(AVCodecContext *ctx1, AVCodecContext *ctx2)
+{
 	
+	if (ctx1->sample_fmt != ctx2->sample_fmt 
+					|| ctx1->channels != ctx2->channels 
+					|| ctx1->sample_rate != ctx2->sample_rate)
+	{
+		return false;
+	}
+	return true;
 }
 void RecordMux::Run()
 {
@@ -274,47 +298,18 @@ void RecordMux::Run()
 	VideoFrameIndex = AudioFrameIndex = 0; //复位音视频的帧序.
 	while(bStartRecord) //启动了录像标志，才进行录像，否则退出线程
 	{
-		//音视频线程都已经创建了队列后，就开始取数据
-		if (fifo_audio && fifo_video)
-		{
-			int sizeAudio = av_audio_fifo_size(fifo_audio);
-			int sizeVideo = av_fifo_size(fifo_video);
-			//缓存数据写完就结束循环
-			if (av_audio_fifo_size(fifo_audio) <= pFmtContext->streams[AudioIndex]->codec->frame_size && 
-				av_fifo_size(fifo_video) <= frame_size && !bCapture)
-			{
-				break;
-			}
-		}
-		
+
 		if(av_compare_ts(cur_pts_v, pFmtContext->streams[VideoIndex]->codec->time_base, 
 			cur_pts_a,pFmtContext->streams[AudioIndex]->codec->time_base) <= 0)
 		{
-			//av_log(NULL,AV_LOG_PANIC,"************write video\r\n");
-			//read data from fifo
-			if (av_fifo_size(fifo_video) < frame_size && !bCapture)
+
+			if( (pEncFrame = pVideoCap->GetSample()) != NULL )
 			{
-				//cur_pts_v = 0x7fffffffffffffff;
-			}
-			if(av_fifo_size(fifo_video) >= gYuv420FrameSize)
-			{
-				EnterCriticalSection(&VideoSection);
-				av_fifo_generic_read(fifo_video, pEnc_yuv420p_buf, gYuv420FrameSize, NULL); //从队列中读取一帧YUV420P的数据帧,帧的大小预先算出.
-				LeaveCriticalSection(&VideoSection);
-				//将读取到的数据填充到AVFrame中.
-				avpicture_fill((AVPicture *)pEncFrame, pEnc_yuv420p_buf, 
-					pFmtContext->streams[VideoIndex]->codec->pix_fmt, 
-					pFmtContext->streams[VideoIndex]->codec->width, 
-					pFmtContext->streams[VideoIndex]->codec->height);
-				
-				//pts = n * (（1 / timbase）/ fps); 计算pts,编码之前计算pts
-				pEncFrame->pts = cur_pts_v++;// * ((pFormatCtx_Video->streams[0]->time_base.den / pFormatCtx_Video->streams[0]->time_base.num) / FPS);
-			
-				pEncFrame->format = pFmtContext->streams[VideoIndex]->codec->pix_fmt;
-				pEncFrame->width  = pFmtContext->streams[VideoIndex]->codec->width;
-				pEncFrame->height =	pFmtContext->streams[VideoIndex]->codec->height;
 				int got_picture = 0;
 				AVPacket pkt;
+
+				//pts = n * (（1 / timbase）/ fps); 计算pts,编码之前计算pts
+				pEncFrame->pts = cur_pts_v++;// * ((pFormatCtx_Video->streams[0]->time_base.den / pFormatCtx_Video->streams[0]->time_base.num) / FPS);
 				av_init_packet(&pkt);
 				
 				pkt.data = NULL;
@@ -327,7 +322,7 @@ void RecordMux::Run()
 					continue;
 				}
 				
-				if (got_picture==1)
+				if ( got_picture == 1 )
 				{
  					pkt.stream_index = VideoIndex;
 					//将编码后的包的Pts和dts，转换到输出文件中指定的时基 .在编码后就可以得出包的pts和dts.
@@ -344,50 +339,36 @@ void RecordMux::Run()
 		}
 		else
 		{
-			
-			if (NULL == fifo_audio)
-			{
-				continue;//还未初始化fifo
-			}
-			if (av_audio_fifo_size(fifo_audio) < pFmtContext->streams[AudioIndex]->codec->frame_size && !bCapture)
-			{
-				//cur_pts_a = 0x7fffffffffffffff;
-			}
-			if(av_audio_fifo_size(fifo_audio) >= 
+
+			if(pAudioCap->SimpleSize() >= 
 				(pFmtContext->streams[AudioIndex]->codec->frame_size > 0 ? pFmtContext->streams[AudioIndex]->codec->frame_size : 1024))
 			{
 
 				AVFrame *frame;
 				AVFrame *frame2;
-				frame = alloc_audio_frame(pFormatCtx_Audio->streams[0]->codec->sample_fmt,\
+				frame = alloc_audio_frame(pAudioCap->GetCodecContext()->sample_fmt,\
 					pFmtContext->streams[1]->codec->channel_layout,\
 					pFmtContext->streams[1]->codec->sample_rate,\
 					pFmtContext->streams[1]->codec->frame_size);
 				frame2 = frame;
-			
 
-				EnterCriticalSection(&AudioSection);
-				//从音频fifo中读取编码器需要的样本个数.
-				av_audio_fifo_read(fifo_audio, (void **)frame->data, 
+				pAudioCap->GetSample((void **)frame->data, 
 					pFmtContext->streams[1]->codec->frame_size);
-				LeaveCriticalSection(&AudioSection);
 
-				if (pFmtContext->streams[AudioIndex]->codec->sample_fmt != pFormatCtx_Audio->streams[0]->codec->sample_fmt 
-					|| pFmtContext->streams[AudioIndex]->codec->channels != pFormatCtx_Audio->streams[0]->codec->channels 
-					|| pFmtContext->streams[AudioIndex]->codec->sample_rate != pFormatCtx_Audio->streams[0]->codec->sample_rate)
+
+				if(!AudioFmtEqual(pFmtContext->streams[AudioIndex]->codec, pAudioCap->GetCodecContext()) )
 				{
-						int dst_nb_samples;
+					int dst_nb_samples;
 					//如果输入和输出的音频格式不一样 需要重采样，这里是一样的就没做
-					  dst_nb_samples = av_rescale_rnd(swr_get_delay(audio_swr_ctx, pFmtContext->streams[AudioIndex]->codec->sample_rate) + frame->nb_samples,
-                                            pFmtContext->streams[AudioIndex]->codec->sample_rate, pFmtContext->streams[AudioIndex]->codec->sample_rate, AV_ROUND_UP);
-					  //av_assert0(dst_nb_samples == frame->nb_samples);
-
-					  int ret = swr_convert(audio_swr_ctx,
-                              pAudioFrame->data, dst_nb_samples,
-                              (const uint8_t **)frame->data, frame->nb_samples);
-					  frame = pAudioFrame;
+					dst_nb_samples = av_rescale_rnd(swr_get_delay(audio_swr_ctx, pFmtContext->streams[AudioIndex]->codec->sample_rate) + frame->nb_samples,
+									pFmtContext->streams[AudioIndex]->codec->sample_rate, pFmtContext->streams[AudioIndex]->codec->sample_rate, AV_ROUND_UP);
+					 
+					int ret = swr_convert(audio_swr_ctx,
+						pAudioFrame->data, dst_nb_samples,
+						(const uint8_t **)frame->data, frame->nb_samples);
+					frame = pAudioFrame;
 				}
-
+			
 				AVPacket pkt_out;
 				av_init_packet(&pkt_out);
 				int got_picture = -1;
@@ -396,8 +377,7 @@ void RecordMux::Run()
 
 				frame->pts = cur_pts_a;
 				cur_pts_a+=pFmtContext->streams[AudioIndex]->codec->frame_size;
-				
-				//cur_pts_a=AudioFrameIndex;
+
 				if (avcodec_encode_audio2(pFmtContext->streams[AudioIndex]->codec, &pkt_out, frame, &got_picture) < 0)
 				{
 					av_log(NULL,AV_LOG_ERROR,"can not decoder a frame");
@@ -436,8 +416,6 @@ void RecordMux::Run()
 	{
 		av_frame_free(&pEncFrame);
 	}
-	av_fifo_free(fifo_video);
-	fifo_video = 0;
 
 	av_write_trailer(pFmtContext);
 
@@ -448,4 +426,23 @@ void RecordMux::Run()
 	recordThreadQuit = true;
 	av_log(NULL,AV_LOG_INFO,"app  exit\r\n");
 	
+}
+
+int RecordMux::OpenCamera(const char* psDevName,const unsigned  int width,
+													const unsigned  int height,
+													const unsigned  int FrameRate,AVPixelFormat format, Video_Callback pCbFunc)
+{
+	if(pDShowInputFmt == NULL)Init();
+	return pVideoCap->OpenPreview(psDevName,pDShowInputFmt,width,height,FrameRate, format, pCbFunc);
+
+}
+int RecordMux::OpenAudio(const char * psDevName)
+{
+	if(pDShowInputFmt == NULL)Init();
+	return pAudioCap->Open(psDevName,pDShowInputFmt);
+}
+int RecordMux::Init()
+{
+	pDShowInputFmt = av_find_input_format("dshow");
+	return 0;
 }

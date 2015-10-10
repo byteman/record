@@ -22,6 +22,8 @@ extern "C"
 #ifdef __cplusplus
 };
 #endif
+#include <Windows.h>
+
 #include "AudioCapture.h"
 #include "Utils.h"
 
@@ -72,9 +74,10 @@ AudioCap::AudioCap()
 {
 	pFormatContext = NULL;
 	pCodecContext= NULL;
-	bCapture= false;
+	bCapture= true;
 	bQuit=false;
 	bStartRecord = false;
+	fifo_audio = NULL;
 	InitializeCriticalSection(&section);
 	sws_ctx=NULL;
 }
@@ -83,8 +86,9 @@ int AudioCap::Open(const char * psDevName, AVInputFormat *ifmt)
 	int ret = 0;
 	bQuit	 = false;
 	bCapture = true;
+	
 	ret = OpenAudioCapture(&pFormatContext,psDevName,ifmt);
-
+	
 	CreateThread( NULL, 0, AudioCapThreadProc, this, 0, NULL);
 
 	return ret;
@@ -92,7 +96,9 @@ int AudioCap::Open(const char * psDevName, AVInputFormat *ifmt)
 
 int AudioCap::Close()
 {
-
+	bCapture = false;
+	//等待线程结束.
+	return 0;
 }
 AVCodecContext* AudioCap::GetCodecContext()
 {
@@ -156,7 +162,43 @@ void AudioCap::Run( )
 		
 	}
 	av_frame_free(&frame);
+	if(pFormatContext)
+		avformat_close_input(&pFormatContext);
+	pFormatContext = NULL;
+
+	if(fifo_audio)
+	{
+		av_audio_fifo_free(fifo_audio);
+		fifo_audio = NULL;
+	}
+
 	bQuit = true;
 	av_log(NULL,AV_LOG_ERROR,"video thread exit\r\n");
 
+}
+bool AudioCap::StartRecord()
+{
+	bStartRecord = true;
+	return true;
+}
+int AudioCap::StopRecord()
+{
+	bStartRecord = false;
+	return 0;
+}
+int AudioCap::SimpleSize()
+{
+
+	return av_audio_fifo_size(fifo_audio);	
+}
+int AudioCap::GetSample(void **data, int nb_samples)
+{
+	int nRead = 0;
+	EnterCriticalSection(&section);
+			//从音频fifo中读取编码器需要的样本个数.
+	nRead = av_audio_fifo_read(fifo_audio, data, 
+		nb_samples);
+	LeaveCriticalSection(&section);
+
+	return nRead;
 }

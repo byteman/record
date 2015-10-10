@@ -364,7 +364,7 @@ static int dshow_try_open_devices2(AVFormatContext	** ctx,const char* psDevName,
 	memset(buf,0,16);
 	_snprintf_s(buf,16,"%dx%d",width,height);
 	av_dict_set(&options, "video_size", buf, NULL);
-
+	av_dict_set(&options, "pixel_format", "yuyv422", NULL);
 	if(avformat_open_input(ctx, psDevName, ifmt, &options)!=0)
 		//if(avformat_open_input(&pFormatCtx_Video, psDevName, ifmt, NULL)!=0)
 	{
