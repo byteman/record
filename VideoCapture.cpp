@@ -11,6 +11,7 @@ extern "C"
 #include "libavfilter/avfiltergraph.h" 
 #include "libavfilter/buffersink.h"  
 #include "libavfilter/buffersrc.h" 
+#include "libavutil/pixdesc.h"
 
 #pragma comment(lib, "avcodec.lib")
 #pragma comment(lib, "avformat.lib")
@@ -28,14 +29,14 @@ extern "C"
 
 int VideoCap::OpenVideoCapture(AVFormatContext** pFmtCtx, AVCodecContext	** pCodecCtx,const char* psDevName,AVInputFormat *ifmt,const unsigned  int width,
 													const unsigned  int height,
-													const unsigned  int FrameRate)
+													const unsigned  int FrameRate,const char* fmt)
 {
 	int fps = 0;
 	int idx = 0;
 	AVCodec* pCodec = NULL;
 	dshow_dump_params(pFmtCtx,psDevName,ifmt);
 	dshow_dump_devices(pFmtCtx,psDevName,ifmt);
-	fps = dshow_try_open_devices(pFmtCtx, psDevName, ifmt,width, height, FrameRate);
+	fps = dshow_try_open_devices(pFmtCtx, psDevName, ifmt,width, height, FrameRate,fmt);
 	if(fps == 0) 
 	{
 		return -1;
@@ -150,7 +151,7 @@ void VideoCap::Run( )
 
 					sws_scale(sws_ctx, (const uint8_t* const*)pFrame->data, pFrame->linesize, 0, 
 							pCodecContext->height, pPreviewFrame->data, pPreviewFrame->linesize);
-					pCallback(pPreviewFrame->data[0], pCodecContext->width ,pCodecContext->height);
+					pCallback(channel,pPreviewFrame->data[0], pCodecContext->width ,pCodecContext->height);
 					if( (pCodecContext->width!=640) || (pCodecContext->height!=480))
 					{
 						av_log(NULL,AV_LOG_INFO,"width=%d,height=%d\r\n",pCodecContext->width,pCodecContext->height);
@@ -209,21 +210,25 @@ void VideoCap::Run( )
 
 int VideoCap::OpenPreview(const char* psDevName,AVInputFormat *ifmt,const unsigned  int width,
 													const unsigned  int height,
-													const unsigned  int FrameRate,AVPixelFormat format, Video_Callback pCbFunc)
+													const unsigned  int FrameRate,AVPixelFormat cap_format,AVPixelFormat format, Video_Callback pCbFunc)
 {
 	int ret = 0;
 	bQuit	 = false;
 	bCapture = true;
 	pCallback = pCbFunc;
-	ret = OpenVideoCapture(&pFormatContext,&pCodecContext,psDevName,ifmt,width,height,FrameRate);
-
+	const char* name = av_get_pix_fmt_name(cap_format);
+	ret = OpenVideoCapture(&pFormatContext,&pCodecContext,psDevName,ifmt,width,height,FrameRate,name);
+	if(ret != ERR_RECORD_OK) 
+	{
+		return ERR_RECORD_VIDEO_OPEN;
+	}
 	SetCallBackAttr(width,height,format,pCbFunc);
 	CreateThread( NULL, 0, VideoCapThreadProc, this, 0, NULL);
 
 	return ret;
 }
 
-VideoCap::VideoCap()
+VideoCap::VideoCap(int chan)
 {
 	pFormatContext = NULL;
 	pCodecContext = NULL;
@@ -234,6 +239,7 @@ VideoCap::VideoCap()
 	pCallback = NULL;
 	fifo_video = NULL;
 	sws_ctx = NULL;
+	channel = chan;
 	InitializeCriticalSection(&section);
 }
 int VideoCap::Close()
@@ -261,6 +267,15 @@ int VideoCap::GetHeight()
 AVPixelFormat VideoCap::GetFormat()
 {
 	return pCodecContext->pix_fmt;
+}
+AVFrame* VideoCap::GetLastSample()
+{
+	AVFrame* frame = NULL;
+	if(fifo_video == NULL) return NULL;
+	frame = GetSample();
+	if(frame != NULL) return frame;
+
+	return pRecFrame2;
 }
 AVFrame* VideoCap::GetSample()
 {

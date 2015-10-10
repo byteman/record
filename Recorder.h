@@ -64,12 +64,13 @@ CLOUDWALKFACESDK_API  char** SDK_CallMode CloudWalk_ListDevices(int  devType, in
 /**
 视频回调接口
 参数描述：
+	index: 视频通道编号
 	rgb24： rgb24格式的一帧图像缓冲数据
 	width:  图像的宽度
 	height:  图像的高度  
 
 */
-typedef  int (*Video_Callback)(unsigned char* rgb24, int width, int height);
+typedef  int (*Video_Callback)(int channel,unsigned char* rgb24, int width, int height);
 
 /**
 功能: 打开音视频设备，注册回调函数

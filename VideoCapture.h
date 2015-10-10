@@ -6,10 +6,10 @@
 
 class VideoCap{
 public:
-	VideoCap();
+	VideoCap(int chan);
 	int OpenPreview(const char* psDevName,AVInputFormat *ifmt,const unsigned  int width,
 													const unsigned  int height,
-													const unsigned  int FrameRate,AVPixelFormat format, Video_Callback pCbFunc);
+													const unsigned  int FrameRate,AVPixelFormat cap_format,AVPixelFormat format, Video_Callback pCbFunc);
 	bool SetCallBackAttr(int width, int height, AVPixelFormat format,Video_Callback pCbFunc);
 	int Close();
 	void Run( );
@@ -19,12 +19,13 @@ public:
 	int GetHeight();
 	AVPixelFormat GetFormat();
 	AVFrame* GetSample();
+	AVFrame* GetLastSample();
 	int StartRecord(AVPixelFormat format, int width, int height);
 	int StopRecord();
 private:
 	int OpenVideoCapture(AVFormatContext** pFmtCtx, AVCodecContext	** pCodecCtx,const char* psDevName,AVInputFormat *ifmt,const unsigned  int width,
 													const unsigned  int height,
-													const unsigned  int FrameRate);
+													const unsigned  int FrameRate,const char* fmt);
 	AVFormatContext* pFormatContext;
 	AVCodecContext*  pCodecContext;
 	bool bCapture;
@@ -45,5 +46,6 @@ private:
 	int y_size;
 	int nSampleSize;
 	int nRGB24Size;
+	int channel;
 };
 #endif

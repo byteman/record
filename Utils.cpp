@@ -351,7 +351,7 @@ void dshow_dump_devices(AVFormatContext	** ctx,const char* psDevName,AVInputForm
 	if(options!=NULL)
 		av_dict_free(&options);
 }
-static int dshow_try_open_devices2(AVFormatContext	** ctx,const char* psDevName,AVInputFormat *ifmt,int width, int height, int fps)
+static int dshow_try_open_devices2(AVFormatContext	** ctx,const char* psDevName,AVInputFormat *ifmt,int width, int height, int fps,const char* fmt)
 {
 	AVDictionary *options = NULL;
 	char buf[16] = {0,};
@@ -364,7 +364,7 @@ static int dshow_try_open_devices2(AVFormatContext	** ctx,const char* psDevName,
 	memset(buf,0,16);
 	_snprintf_s(buf,16,"%dx%d",width,height);
 	av_dict_set(&options, "video_size", buf, NULL);
-	av_dict_set(&options, "pixel_format", "yuyv422", NULL);
+	av_dict_set(&options, "pixel_format", fmt, NULL);
 	if(avformat_open_input(ctx, psDevName, ifmt, &options)!=0)
 		//if(avformat_open_input(&pFormatCtx_Video, psDevName, ifmt, NULL)!=0)
 	{
@@ -376,16 +376,16 @@ static int dshow_try_open_devices2(AVFormatContext	** ctx,const char* psDevName,
 		av_dict_free(&options);
 	return 0;
 }
-int dshow_try_open_devices(AVFormatContext	** ctx,const char* psDevName,AVInputFormat *ifmt,int width, int height, int fps)
+int dshow_try_open_devices(AVFormatContext	** ctx,const char* psDevName,AVInputFormat *ifmt,int width, int height, int fps,const char* fmt)
 {
 	int fps_arr[5] = {10,15,20,25,30};
 	
-	if(dshow_try_open_devices2(ctx,psDevName,ifmt,width,height,fps) == 0) return fps;
+	if(dshow_try_open_devices2(ctx,psDevName,ifmt,width,height,fps,fmt) == 0) return fps;
 	av_log(NULL,AV_LOG_ERROR,"%d orig fps can not open\r\n",fps);
 	for(int i = 10; i <= 30; i++)
 	{
 		
-		if(dshow_try_open_devices2(ctx,psDevName,ifmt,width,height,i) == 0)
+		if(dshow_try_open_devices2(ctx,psDevName,ifmt,width,height,i,fmt) == 0)
 		{
 			av_log(NULL,AV_LOG_ERROR,"%d fps open ok\r\n",i);
 			return i;
@@ -395,3 +395,131 @@ int dshow_try_open_devices(AVFormatContext	** ctx,const char* psDevName,AVInputF
 	return 0;
 }
 
+MyFile::MyFile(const char* file)
+{
+	Open(file);
+}
+MyFile::~MyFile()
+{
+	Close();
+}
+bool MyFile::Open(const char* file)
+{
+	_file = file;
+	_fp = fopen(file,"wb+");
+	if(_fp==NULL) return false;
+
+	return true;
+}
+bool MyFile::Close()
+{
+	if(_fp)
+	{
+		fclose(_fp);
+	}
+	return true;
+}
+int  MyFile::FillBuffer(unsigned char val, int size)
+{
+	int rt = 0;
+	for(int i = 0; i < size; i++)
+	{
+		rt += fwrite(&val,1,1,_fp);
+	}
+	return rt;
+}
+int MyFile::WriteFrame(AVFrame* frame)
+{
+	int ret = 0;
+	if(frame==NULL) return 0;
+	switch(frame->format)
+	{
+		case AV_PIX_FMT_YUV420P:
+			ret = WriteYUV420P(frame);
+			break;
+		case AV_PIX_FMT_RGB24:
+		case AV_PIX_FMT_BGR24:
+			ret = WriteRGB24(frame);
+			break;
+	}
+	return ret;
+}
+int  MyFile::WriteBuffer(void* buffer, int size)
+{
+	return fwrite(buffer,size,1,_fp);
+}
+int  MyFile::WriteRGB24(AVFrame* frame)
+{
+	return WriteBuffer(frame->data[0], frame->width*frame->height);
+}
+int  MyFile::WriteYUV420P(AVFrame* frame)
+{
+	int y_size = frame->width*frame->height;
+	int ret = 0;
+	ret += WriteBuffer(frame->data[0], y_size);
+	ret += WriteBuffer(frame->data[1], y_size/4);
+	ret += WriteBuffer(frame->data[2], y_size/4);
+
+	return ret;
+
+}
+
+bool MyFile::Open(const char* file,AVPixelFormat format, int width, int height,int fps)
+{
+	isReadOnly = true;
+	_width = width;
+	_height = height;
+
+	_frameSize = avpicture_get_size(format, width, height);
+
+	
+	if(_fp == NULL) return false;
+
+	_frame = alloc_picture(format,width,height,16);
+	if(_frame == NULL) return false;
+	_fp = fopen(file,"rb");
+	_format = format;
+	return (_frame!=NULL); 
+}
+AVFrame*  MyFile::ReadFrame()
+{
+	bool rt = false;
+	if(!isReadOnly) return NULL;
+
+	switch(_format)
+	{
+		case AV_PIX_FMT_YUV420P:
+			rt = ReadYUV420P(_frame);
+			break;
+		case AV_PIX_FMT_RGB24:
+		case AV_PIX_FMT_BGR24:
+			rt = ReadRGB24(_frame);
+			break;
+		default:
+			return NULL;
+			
+	}
+	if(!rt) return NULL;
+	return _frame;
+}
+
+int  MyFile::ReadBuffer(void* buffer, int size)
+{
+	return fread(buffer,size,1,_fp);
+}
+bool  MyFile::ReadRGB24(AVFrame* frame)
+{
+	int ret = ReadBuffer(frame->data[0],frame->width*frame->height);
+	return (ret == _frameSize);
+}
+bool MyFile::ReadYUV420P(AVFrame* frame)
+{
+	int ret = 0;
+
+	ret += ReadBuffer(frame->data[0],frame->width*frame->height);
+	ret += ReadBuffer(frame->data[0],frame->width*frame->height/4);
+	ret += ReadBuffer(frame->data[0],frame->width*frame->height/4);
+
+	return (ret == _frameSize);
+
+}

@@ -83,7 +83,7 @@ int RecordMux::OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioIn
 		}
 
 		pVideoStream->codec->height = pVideoInfo->height; //输出文件视频流的高度
-		pVideoStream->codec->width  = pVideoInfo->width;  //输出文件视频流的宽度
+		pVideoStream->codec->width  = 2*pVideoInfo->width;  //输出文件视频流的宽度
 		AVRational ar;
 		ar.den = 15;
 		ar.num = 1;
@@ -202,12 +202,7 @@ int RecordMux::OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioIn
 	{
 		av_log(NULL,AV_LOG_ERROR,"can not write the header of the output file!\n");
 		return -7;
-	}
-
-	//获取目标帧的大小.
-	frame_size = avpicture_get_size(pFmtContext->streams[VideoIndex]->codec->pix_fmt, pVideoInfo->width, pVideoInfo->height);
-	//申请30帧目标帧大小做video的fifo
-	
+	}	
 	pRecFrame = alloc_picture(AV_PIX_FMT_YUV420P,pVideoInfo->width,pVideoInfo->height,16);
 
 	return 0;
@@ -229,7 +224,8 @@ DWORD WINAPI RecordThreadProc( LPVOID lpParam )
 RecordMux::RecordMux()
 {
 	InitializeCriticalSection(&VideoSection);
-	pVideoCap = new VideoCap();
+	pVideoCap = new VideoCap(1);
+	pVideoCap2 = new VideoCap(2);
 	pAudioCap = new AudioCap();
 	bStartRecord = false;
 	bCapture = false;
@@ -237,6 +233,12 @@ RecordMux::RecordMux()
 	cur_pts_v = cur_pts_a = 0;
 	pDShowInputFmt = NULL;
 
+	MyFile f("111.yuv");
+	f.FillBuffer(0x0, 320*240*1);
+	f.FillBuffer(0x80, 320*240/4);
+	f.FillBuffer(0x80, 320*240/4);
+	MyFile f2("222.yuv");
+	f2.FillBuffer(0xFF, 320*240*1.5);
 }
 /*
 启动录像操作
@@ -245,7 +247,11 @@ int RecordMux::Start(const char* filePath,VideoInfo* pVideoInfo, AudioInfo* pAud
 {
 	
 	int ret = OpenOutPut(filePath,pVideoInfo,pAudioInfo,pSubTitle);
-	pVideoCap->StartRecord(AV_PIX_FMT_YUV420P, pVideoInfo->width, pVideoInfo->height);
+	pVideoCap->StartRecord(AV_PIX_FMT_YUV420P,  pVideoInfo->width, pVideoInfo->height);
+	pVideoCap2->StartRecord(AV_PIX_FMT_YUV420P, pVideoInfo->width, pVideoInfo->height);
+
+	pRecFrame = alloc_picture(AV_PIX_FMT_YUV420P,pVideoInfo->width*2,pVideoInfo->height,16);
+
 	pAudioCap->StartRecord();
 	CreateThread( NULL, 0, RecordThreadProc, this, 0, NULL);
 	return ret;
@@ -262,6 +268,7 @@ int RecordMux::Stop()
 	}
 	bStartRecord = false;
 	pVideoCap->StopRecord();
+	pVideoCap2->StopRecord();
 	pAudioCap->StopRecord();
 	while(!recordThreadQuit)
 	{
@@ -277,6 +284,7 @@ int RecordMux::Close()
 {
 	pAudioCap->Close();
 	pVideoCap->Close();
+	pVideoCap2->Close();
 
 	return 0;
 }
@@ -291,11 +299,85 @@ bool AudioFmtEqual(AVCodecContext *ctx1, AVCodecContext *ctx2)
 	}
 	return true;
 }
+
+AVFrame* RecordMux::MergeFrame(AVFrame* frame1, AVFrame* frame2)
+{
+	int offset = 0;
+	int i = 0;
+#if 1
+	for( i = 0; i < frame1->height; i++)
+	{
+		memset(pRecFrame->data[0]+offset,0x0,frame1->width);
+		offset+=frame1->width;
+		memset(pRecFrame->data[0]+offset,0xFF,frame1->width);
+		
+		offset+=frame1->width;
+	}
+	offset = 0;
+
+	for( i = 0; i < frame1->height/2; i++)
+	{
+		memset(pRecFrame->data[1]+offset,0x0,frame1->width/2);
+		offset+=frame1->width/2;
+		memset(pRecFrame->data[1]+offset,0x0,frame1->width/2);
+		
+		offset+=frame1->width/2;
+	}
+	offset = 0;
+
+	for( i = 0; i < frame1->height/2; i++)
+	{
+		memset(pRecFrame->data[2]+offset,0x0,frame1->width/2);
+		offset+=frame1->width/2;
+		memset(pRecFrame->data[2]+offset,0x0,frame1->width/2);
+		
+		offset+=frame1->width/2;
+	}
+	offset = 0;
+
+
+	
+	return NULL;
+#endif
+	offset = 0;
+	for( i = 0; i < frame1->height; i++)
+	{
+		memcpy(pRecFrame->data[0]+offset, frame1->data[0], frame1->width);
+		offset+=frame1->width;
+		memcpy(pRecFrame->data[0]+offset, frame2->data[0], frame2->width);
+		offset+=frame2->width;
+	}
+	offset = 0;
+	for( i = 0; i < frame1->height/2; i++)
+	{
+		memcpy(pRecFrame->data[1]+offset, frame1->data[1], frame1->width/2);
+		offset+=frame1->width/2;
+		memcpy(pRecFrame->data[1]+offset, frame2->data[1], frame2->width/2);
+		offset+=frame1->width/2;
+		
+	}
+	offset = 0;
+	for( i = 0; i < frame1->height/2; i++)
+	{
+		memcpy(pRecFrame->data[2]+offset, frame1->data[2], frame1->width/2);
+		offset+=frame1->width/2;
+		memcpy(pRecFrame->data[2]+offset, frame2->data[2], frame2->width/2);
+		offset+=frame1->width/2;
+		
+	}
+	return pRecFrame;
+
+}
 void RecordMux::Run()
 {
+	AVFrame* pSecordFrame = NULL;
+	AVFrame* ptmp = NULL;
 	bStartRecord = true;
 	cur_pts_v = cur_pts_a = 0; //复位音视频的pts
 	VideoFrameIndex = AudioFrameIndex = 0; //复位音视频的帧序.
+	MyFile file("1.yuv");
+	MyFile file2("2.yuv");
+	MyFile file3("12.yuv");
 	while(bStartRecord) //启动了录像标志，才进行录像，否则退出线程
 	{
 
@@ -308,14 +390,20 @@ void RecordMux::Run()
 				int got_picture = 0;
 				AVPacket pkt;
 
+				pSecordFrame = pVideoCap2->GetLastSample();
+				file.WriteFrame(pEncFrame);
+				file2.WriteFrame(pSecordFrame);
+				MergeFrame(pEncFrame,pSecordFrame);
+				file3.WriteFrame(pRecFrame);
+				ptmp = pRecFrame;
 				//pts = n * (（1 / timbase）/ fps); 计算pts,编码之前计算pts
-				pEncFrame->pts = cur_pts_v++;// * ((pFormatCtx_Video->streams[0]->time_base.den / pFormatCtx_Video->streams[0]->time_base.num) / FPS);
+				ptmp->pts = cur_pts_v++;// * ((pFormatCtx_Video->streams[0]->time_base.den / pFormatCtx_Video->streams[0]->time_base.num) / FPS);
 				av_init_packet(&pkt);
 				
 				pkt.data = NULL;
 				pkt.size = 0;
 				//编码一帧视频.
-				int ret = avcodec_encode_video2(pFmtContext->streams[VideoIndex]->codec, &pkt, pEncFrame, &got_picture);
+				int ret = avcodec_encode_video2(pFmtContext->streams[VideoIndex]->codec, &pkt, ptmp, &got_picture);
 				if(ret < 0)
 				{
 					//编码错误,不理会此帧
@@ -428,12 +516,16 @@ void RecordMux::Run()
 	
 }
 
-int RecordMux::OpenCamera(const char* psDevName,const unsigned  int width,
+int RecordMux::OpenCamera(const char* psDevName,const char* psDevName2,const unsigned  int width,
 													const unsigned  int height,
 													const unsigned  int FrameRate,AVPixelFormat format, Video_Callback pCbFunc)
 {
+	int rt = 0;
 	if(pDShowInputFmt == NULL)Init();
-	return pVideoCap->OpenPreview(psDevName,pDShowInputFmt,width,height,FrameRate, format, pCbFunc);
+		
+	rt = pVideoCap2->OpenPreview(psDevName2,pDShowInputFmt,width,height,FrameRate,AV_PIX_FMT_YUYV422,format, pCbFunc);
+	if(rt != ERR_RECORD_OK) return rt;
+	return pVideoCap->OpenPreview(psDevName,pDShowInputFmt,width,height,FrameRate, AV_PIX_FMT_YUV420P,format, pCbFunc);
 
 }
 int RecordMux::OpenAudio(const char * psDevName)

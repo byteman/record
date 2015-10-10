@@ -106,19 +106,28 @@ int  SDK_CallMode   CloudWalk_OpenDevices(
 													Video_Callback video_callback)
 {
 
-	
-	
-
-
+	int ret = 0;
 	FPS = FrameRate;
 	av_log(NULL,AV_LOG_ERROR,"CloudWalk_OpenDevices vidoe=%s,audio=%s width=%d height=%d framerate=%d\r\n",\
 			pVideoDevice,pAudioDevice,width,height,FrameRate);
 	AVInputFormat *pDShowInputFmt = av_find_input_format("dshow");
-
-	recMux.OpenCamera(getDevicePath("video",pVideoDevice).c_str(),width,height,FrameRate,AV_PIX_FMT_RGB24, video_callback);
-
-	recMux.OpenAudio(getDevicePath("audio",pAudioDevice).c_str());
-
+	if(pDShowInputFmt == NULL)
+	{
+		av_log(NULL,AV_LOG_ERROR,"dshow init failed\r\n");
+		return ERR_RECORD_DSHOW_OPEN;
+	}
+	ret = recMux.OpenCamera(getDevicePath("video",pVideoDevice).c_str(),getDevicePath("video",pVideoDevice2).c_str(),width,height,FrameRate,AV_PIX_FMT_RGB24, video_callback);
+	if(ret != ERR_RECORD_OK)
+	{
+		av_log(NULL,AV_LOG_ERROR,"OpenCamera failed\r\n");
+		return ret;
+	}
+	ret = recMux.OpenAudio(getDevicePath("audio",pAudioDevice).c_str());
+	if(ret != ERR_RECORD_OK)
+	{
+		av_log(NULL,AV_LOG_ERROR,"OpenAudio failed\r\n");
+		return ret;
+	}
 
 	return 0;
 

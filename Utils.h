@@ -21,5 +21,44 @@ bool resetDevciesString(int num);
 
 void dshow_dump_params(AVFormatContext	** ctx,const char* psDevName,AVInputFormat *ifmt);
 void dshow_dump_devices(AVFormatContext	** ctx,const char* psDevName,AVInputFormat *ifmt);
-int dshow_try_open_devices(AVFormatContext	** ctx,const char* psDevName,AVInputFormat *ifmt,int width, int height, int fps);
+int dshow_try_open_devices(AVFormatContext	** ctx,const char* psDevName,AVInputFormat *ifmt,int width, int height, int fps,const char* fmt);
+
+
+class MyFile
+{
+public:
+	MyFile():
+		_fp(NULL)
+	{
+		_file = "";
+		isReadOnly = false;
+		_frame = NULL;
+		_frameSize = 0;
+		_format = AV_PIX_FMT_NONE;
+	}
+	~MyFile();
+	MyFile(const char* file);
+	bool Open(const char* file);
+	bool Open(const char* file,AVPixelFormat format, int width, int height,int fps);
+	bool Close();
+	int  FillBuffer(unsigned char val, int size);
+	int	 WriteFrame(AVFrame* frame);
+	int  WriteBuffer(void* buffer, int size);
+	int  WriteRGB24(AVFrame* frame);
+	int  WriteYUV420P(AVFrame* frame);
+	AVFrame*  ReadFrame();
+	int  ReadBuffer(void* buffer, int size);
+	bool  ReadRGB24(AVFrame* frame);
+	bool  ReadYUV420P(AVFrame* frame);
+	
+private:
+	std::string _file;
+	FILE* _fp;
+	unsigned char *_buffer;
+	int _width,_height,_fps;
+	bool isReadOnly;
+	AVFrame* _frame;
+	int _frameSize;
+	AVPixelFormat _format;
+};
 #endif
