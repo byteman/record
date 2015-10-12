@@ -1,14 +1,15 @@
 #ifndef RECORD_MUX_H
 #define RECORD_MUX_H
-
+#include <vector>
 class VideoCap;
 class AudioCap;
 class RecordMux
 {
 public:
+	typedef std::vector<VideoCap*> VideoCapList; 
 	RecordMux();
 	int Init();
-	int OpenCamera(const char* psDevName,const char* psDevName2,const unsigned  int width,
+	int OpenCamera(const char* psDevName,int index,const unsigned  int width,
 													const unsigned  int height,
 													const unsigned  int FrameRate,AVPixelFormat format, Video_Callback pCbFunc);
 
@@ -21,8 +22,9 @@ public:
 private:
 	int OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioInfo* pAudioInfo,SubTitleInfo* pSubTitle);
 	AVFrame* MergeFrame(AVFrame* frame1, AVFrame* frame2);
-	VideoCap* pVideoCap;
-	VideoCap* pVideoCap2;
+	//VideoCap* pVideoCap[2];
+	//VideoCap* pVideoCap2;
+	VideoCapList pVideoCaps;
 	AudioCap* pAudioCap;
 	AVFormatContext *pFmtContext;
 	int VideoIndex,AudioIndex;

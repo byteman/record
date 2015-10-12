@@ -84,13 +84,13 @@ int RecordMux::OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioIn
 		}
 
 		pVideoStream->codec->height = pVideoInfo->height; //输出文件视频流的高度
-		pVideoStream->codec->width  = 2*pVideoInfo->width;  //输出文件视频流的宽度
+		pVideoStream->codec->width  = pVideoCaps.size()*pVideoInfo->width;  //输出文件视频流的宽度
 		AVRational ar;
 		ar.den = 15;
 		ar.num = 1;
-		pVideoStream->codec->time_base = pVideoCap->GetVideoTimeBase(); //输出文件视频流的高度和输入文件的时基一致.
-		pVideoStream->time_base = pVideoCap->GetVideoTimeBase();
-		pVideoStream->codec->sample_aspect_ratio = pVideoCap->Get_aspect_ratio();
+		pVideoStream->codec->time_base = pVideoCaps[0]->GetVideoTimeBase(); //输出文件视频流的高度和输入文件的时基一致.
+		pVideoStream->time_base = pVideoCaps[0]->GetVideoTimeBase();
+		pVideoStream->codec->sample_aspect_ratio = pVideoCaps[0]->Get_aspect_ratio();
 		// take first format from list of supported formats
 		//可查看ff_mpeg4_encoder中指定的第一个像素格式，这个是采用MPEG4编码的时候，输入视频帧的像素格式，这里是YUV420P
 		pVideoStream->codec->pix_fmt = pFmtContext->streams[VideoIndex]->codec->codec->pix_fmts[0]; //像素格式，采用MPEG4支持的第一个格式
@@ -225,8 +225,9 @@ DWORD WINAPI RecordThreadProc( LPVOID lpParam )
 RecordMux::RecordMux()
 {
 	InitializeCriticalSection(&VideoSection);
-	pVideoCap = new VideoCap(1);
-	pVideoCap2 = new VideoCap(2);
+	pVideoCaps.clear();
+	//pVideoCap = new VideoCap(0);
+	//pVideoCap2 = new VideoCap(1);
 	pAudioCap = new AudioCap();
 	bStartRecord = false;
 	bCapture = false;
@@ -243,9 +244,11 @@ int RecordMux::Start(const char* filePath,VideoInfo* pVideoInfo, AudioInfo* pAud
 {
 	
 	int ret = OpenOutPut(filePath,pVideoInfo,pAudioInfo,pSubTitle);
-	pVideoCap->StartRecord(AV_PIX_FMT_YUV420P,  pVideoInfo->width, pVideoInfo->height);
-	pVideoCap2->StartRecord(AV_PIX_FMT_YUV420P, pVideoInfo->width, pVideoInfo->height);
-
+	for(int i = 0; i< pVideoCaps.size();i++)
+	{
+		pVideoCaps[i]->StartRecord(AV_PIX_FMT_YUV420P,  pVideoInfo->width, pVideoInfo->height);
+	}
+	
 	pRecFrame = alloc_picture(AV_PIX_FMT_YUV420P,pVideoInfo->width*2,pVideoInfo->height,16);
 
 	pAudioCap->StartRecord();
@@ -263,8 +266,11 @@ int RecordMux::Stop()
 		return ERR_RECORD_OK;
 	}
 	bStartRecord = false;
-	pVideoCap->StopRecord();
-	pVideoCap2->StopRecord();
+	for(int i = 0; i < pVideoCaps.size();i++)
+	{
+		pVideoCaps[i]->StopRecord();
+	}
+	
 	pAudioCap->StopRecord();
 	while(!recordThreadQuit)
 	{
@@ -279,8 +285,12 @@ int RecordMux::Stop()
 int RecordMux::Close()
 {
 	pAudioCap->Close();
-	pVideoCap->Close();
-	pVideoCap2->Close();
+
+	for(int i = 0; i < pVideoCaps.size();i++)
+	{
+		pVideoCaps[i]->Close();
+	}
+	
 
 	return 0;
 }
@@ -303,7 +313,7 @@ AVFrame* RecordMux::MergeFrame(AVFrame* frame1, AVFrame* frame2)
 	
 	//file1.ReadYUV420P(frame1);
 	//file2.ReadYUV420P(frame2);
-
+	if(frame2==NULL) return frame1;
 	offset = 0;
 	for( i = 0; i < frame1->height; i++)
 	{
@@ -350,20 +360,24 @@ void RecordMux::Run()
 			cur_pts_a,pFmtContext->streams[AudioIndex]->codec->time_base) <= 0)
 		{
 
-			if( (pEncFrame = pVideoCap->GetSample()) != NULL )
+			if( (pEncFrame = pVideoCaps[0]->GetSample()) != NULL )
 			{
 				int got_picture = 0;
 				AVPacket pkt;
-
-				pSecordFrame = pVideoCap2->GetLastSample();
+				if(pVideoCaps[1] == NULL) pSecordFrame = NULL;
+				else
+				{
+					pSecordFrame = pVideoCaps[1]->GetLastSample();
+				}
 				
-				MergeFrame(pEncFrame,pSecordFrame);
-				file11.WriteFrame(pEncFrame);
-				file22.WriteFrame(pSecordFrame);
-				file33.WriteFrame(pRecFrame);
-				ptmp = pRecFrame;
-				//pts = n * (（1 / timbase）/ fps); 计算pts,编码之前计算pts
-				ptmp->pts = cur_pts_v++;// * ((pFormatCtx_Video->streams[0]->time_base.den / pFormatCtx_Video->streams[0]->time_base.num) / FPS);
+				
+				ptmp = MergeFrame(pEncFrame,pSecordFrame);
+				//file11.WriteFrame(pEncFrame);
+				//file22.WriteFrame(pSecordFrame);
+				//file33.WriteFrame(pRecFrame);
+				
+				
+				ptmp->pts = cur_pts_v++;
 				av_init_packet(&pkt);
 				
 				pkt.data = NULL;
@@ -482,16 +496,23 @@ void RecordMux::Run()
 	
 }
 
-int RecordMux::OpenCamera(const char* psDevName,const char* psDevName2,const unsigned  int width,
+int RecordMux::OpenCamera(const char* psDevName,int index,const unsigned  int width,
 													const unsigned  int height,
 													const unsigned  int FrameRate,AVPixelFormat format, Video_Callback pCbFunc)
 {
 	int rt = 0;
 	if(pDShowInputFmt == NULL)Init();
-		
-	rt = pVideoCap2->OpenPreview(psDevName2,pDShowInputFmt,width,height,FrameRate,AV_PIX_FMT_YUYV422,format, pCbFunc);
-	if(rt != ERR_RECORD_OK) return rt;
-	return pVideoCap->OpenPreview(psDevName,pDShowInputFmt,width,height,FrameRate, AV_PIX_FMT_YUV420P,format, pCbFunc);
+
+	VideoCap* pVideoCap = new VideoCap(pVideoCaps.size());
+	pVideoCaps.push_back(pVideoCap);
+	rt = pVideoCap->OpenPreview(psDevName,index,pDShowInputFmt,width,height,FrameRate, AV_PIX_FMT_YUV420P,format, pCbFunc);
+
+	if(rt != ERR_RECORD_OK) 
+	{
+		av_log(NULL,AV_LOG_ERROR,"open camera[1]->%s failed\r\n",psDevName);
+		return rt;
+	}
+	return ERR_RECORD_OK;
 
 }
 int RecordMux::OpenAudio(const char * psDevName)

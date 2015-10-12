@@ -27,7 +27,7 @@ extern "C"
 #include "Utils.h"
 
 
-int VideoCap::OpenVideoCapture(AVFormatContext** pFmtCtx, AVCodecContext	** pCodecCtx,const char* psDevName,AVInputFormat *ifmt,const unsigned  int width,
+int VideoCap::OpenVideoCapture(AVFormatContext** pFmtCtx, AVCodecContext	** pCodecCtx,const char* psDevName,int index,AVInputFormat *ifmt,const unsigned  int width,
 													const unsigned  int height,
 													const unsigned  int FrameRate,const char* fmt)
 {
@@ -36,26 +36,22 @@ int VideoCap::OpenVideoCapture(AVFormatContext** pFmtCtx, AVCodecContext	** pCod
 	AVCodec* pCodec = NULL;
 	dshow_dump_params(pFmtCtx,psDevName,ifmt);
 	dshow_dump_devices(pFmtCtx,psDevName,ifmt);
-	fps = dshow_try_open_devices(pFmtCtx, psDevName, ifmt,width, height, FrameRate,fmt);
+	fps = dshow_try_open_devices(pFmtCtx, psDevName,index, ifmt,width, height, FrameRate,fmt);
 	if(fps == 0) 
 	{
 		return -1;
 	}
+	AVDictionary *options = NULL;
+	//av_dict_set_int(&options,"analyzeduration",10000000,0);
+	//av_dict_set_int(&options,"probesize",1000000,0);
+	//analyzeduration
 	if(avformat_find_stream_info(*pFmtCtx,NULL)<0)
 	{
 		av_log(NULL,AV_LOG_ERROR,"Couldn't find stream information.（无法获取视频流信息）\n");
 		return -2;
 	}
-	VideoIndex = -1;
-	for(int i = 0; i < (*pFmtCtx)->nb_streams; i++)
-	{
-		if ((*pFmtCtx)->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO)
-		{
-			VideoIndex = i;
-			break;
-		}
-	}
-	
+	VideoIndex = find_stream_index(*pFmtCtx,AVMEDIA_TYPE_VIDEO);
+		
 	if(VideoIndex == -1)
 	{
 		av_log(NULL,AV_LOG_ERROR,"Couldn't find video stream information.（无法获取视频流信息）\n");
@@ -90,6 +86,10 @@ bool VideoCap::SetCallBackAttr(int width, int height, AVPixelFormat format,Video
 		sws_freeContext(sws_ctx);
 		sws_ctx = NULL;
 	}
+	if(pCodecContext->pix_fmt==-1)
+	{
+		pCodecContext->pix_fmt = AV_PIX_FMT_YUV420P;
+	}
 	//设置需要转换的目标格式为BGR24, 尺寸就是预览图像的大小.
 	sws_ctx = sws_getContext(pCodecContext->width, pCodecContext->height, pCodecContext->pix_fmt, 
 		width, height, format, SWS_BICUBIC, NULL, NULL, NULL);
@@ -113,15 +113,16 @@ void VideoCap::Run( )
 {
 	AVPacket packet;
 	int got_picture = 0;
+	bCapture = true;
 	AVFrame	*pFrame; //存放从摄像头解码后得到的一帧数据.这个数据应该就是YUYV422，高度和宽度是预览的高度和宽度.
-
+	
 	pFrame = av_frame_alloc();//分配一个帧，用于解码输入视频流.
 	
 	//分配一个Frame用作存放RGB24格式的预览视频.
-	AVFrame* pPreviewFrame = alloc_picture(AV_PIX_FMT_RGB24,pCodecContext->width, pCodecContext->height,16);
+	AVFrame* pPreviewFrame = alloc_picture(AV_PIX_FMT_BGR24,pCodecContext->width, pCodecContext->height,16);
 
 	av_init_packet(&packet);
-	
+	av_log(NULL,AV_LOG_DEBUG,"camera[%d] start capture thread\r\n ",channel);
 	while(bCapture)
 	{
 		packet.data = NULL;
@@ -137,7 +138,7 @@ void VideoCap::Run( )
 			//解码视频流 
 			if (avcodec_decode_video2(pCodecContext, pFrame, &got_picture, &packet) < 0)
 			{
-				av_log(NULL,AV_LOG_ERROR,"Decode Error.\n");
+				av_log(NULL,AV_LOG_ERROR,"Camera[%d] Decode Error.\n",channel);
 				continue;
 			}
 			if (got_picture)
@@ -151,7 +152,7 @@ void VideoCap::Run( )
 
 					sws_scale(sws_ctx, (const uint8_t* const*)pFrame->data, pFrame->linesize, 0, 
 							pCodecContext->height, pPreviewFrame->data, pPreviewFrame->linesize);
-					pCallback(channel,pPreviewFrame->data[0], pCodecContext->width ,pCodecContext->height);
+					pCallback(channel+1,pPreviewFrame->data[0], pCodecContext->width ,pCodecContext->height);
 					if( (pCodecContext->width!=640) || (pCodecContext->height!=480))
 					{
 						av_log(NULL,AV_LOG_INFO,"width=%d,height=%d\r\n",pCodecContext->width,pCodecContext->height);
@@ -186,6 +187,7 @@ void VideoCap::Run( )
 		av_free_packet(&packet);
 		
 	}
+	av_log(NULL,AV_LOG_DEBUG,"camera[%d] stop capture thread\r\n ",channel);
 	if(pFrame)
 		av_frame_free(&pFrame);
 
@@ -203,12 +205,11 @@ void VideoCap::Run( )
 	}
 
 	bQuit = 1;
-	
-	av_log(NULL,AV_LOG_INFO,"video thread exit\r\n");
+
 	
 }
 
-int VideoCap::OpenPreview(const char* psDevName,AVInputFormat *ifmt,const unsigned  int width,
+int VideoCap::OpenPreview(const char* psDevName,int index,AVInputFormat *ifmt,const unsigned  int width,
 													const unsigned  int height,
 													const unsigned  int FrameRate,AVPixelFormat cap_format,AVPixelFormat format, Video_Callback pCbFunc)
 {
@@ -217,13 +218,22 @@ int VideoCap::OpenPreview(const char* psDevName,AVInputFormat *ifmt,const unsign
 	bCapture = true;
 	pCallback = pCbFunc;
 	const char* name = av_get_pix_fmt_name(cap_format);
-	ret = OpenVideoCapture(&pFormatContext,&pCodecContext,psDevName,ifmt,width,height,FrameRate,name);
+	ret = OpenVideoCapture(&pFormatContext,&pCodecContext,psDevName,index,ifmt,width,height,FrameRate,name);
 	if(ret != ERR_RECORD_OK) 
 	{
 		return ERR_RECORD_VIDEO_OPEN;
 	}
-	SetCallBackAttr(width,height,format,pCbFunc);
-	CreateThread( NULL, 0, VideoCapThreadProc, this, 0, NULL);
+	if(!SetCallBackAttr(width,height,format,pCbFunc))
+	{
+		av_log(NULL,AV_LOG_ERROR,"SetCallBackAttr failed\r\n");
+		return ERR_RECORD_VIDEO_OPEN;
+	}
+	HANDLE handle = CreateThread( NULL, 0, VideoCapThreadProc, this, 0, NULL);
+	if(handle == NULL)
+	{
+		av_log(NULL,AV_LOG_ERROR,"CreateThread VideoCapThreadProc failed\r\n");
+		return ERR_RECORD_VIDEO_OPEN;
+	}
 
 	return ret;
 }

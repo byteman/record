@@ -351,8 +351,28 @@ void dshow_dump_devices(AVFormatContext	** ctx,const char* psDevName,AVInputForm
 	if(options!=NULL)
 		av_dict_free(&options);
 }
-static int dshow_try_open_devices2(AVFormatContext	** ctx,const char* psDevName,AVInputFormat *ifmt,int width, int height, int fps,const char* fmt)
+int find_stream_index(AVFormatContext* pCtx,enum AVMediaType type )
 {
+	int index = -1;
+	if(pCtx == NULL) return index;
+	for(int i = 0; i < pCtx->nb_streams; i++)
+	{
+	
+		if (pCtx->streams[i]->codec->codec_type == type)
+		{
+			index = i;
+			break;
+		}
+	
+	}
+	return index;
+}
+
+static int dshow_try_open_devices2(AVFormatContext	** ctx,const char* psDevName,int index,AVInputFormat *ifmt,int width, int height, int fps,const char* fmt)
+{
+	int ret = 0;
+	int fmt_index = -1;
+	const char* formats[] = {"yuv420p","yuyv422","yuv422p","rgb24","bgr24"};
 	AVDictionary *options = NULL;
 	char buf[16] = {0,};
 	_snprintf_s(buf,16,"%d",fps);
@@ -364,7 +384,15 @@ static int dshow_try_open_devices2(AVFormatContext	** ctx,const char* psDevName,
 	memset(buf,0,16);
 	_snprintf_s(buf,16,"%dx%d",width,height);
 	av_dict_set(&options, "video_size", buf, NULL);
-	av_dict_set(&options, "pixel_format", fmt, NULL);
+	if(index != -1)
+	{
+		av_dict_set_int(&options, "video_device_number", index, NULL);
+	}
+	
+    //av_dict_set(&options, "scan_all_pmts", "1", AV_DICT_DONT_OVERWRITE);
+
+	if(fmt_index > -1)
+		av_dict_set(&options, "pixel_format", formats[fmt_index], NULL);
 	if(avformat_open_input(ctx, psDevName, ifmt, &options)!=0)
 		//if(avformat_open_input(&pFormatCtx_Video, psDevName, ifmt, NULL)!=0)
 	{
@@ -372,20 +400,51 @@ static int dshow_try_open_devices2(AVFormatContext	** ctx,const char* psDevName,
 		return -1;
 	}
 
+	AVFormatContext* pTmpCtx = *ctx;
+	int index2 = find_stream_index(pTmpCtx,AVMEDIA_TYPE_VIDEO);
+	if(index2 == -1) 
+	{
+		return -2;
+	}
+/*
+	if(pTmpCtx->streams[index]->codec->codec_id != AV_CODEC_ID_RAWVIDEO)
+	{
+		if(fmt_index >= 5) 
+		{
+			ret = -3;
+			goto err;
+		}
+		fmt_index++;
+		goto retry;
+		
+	}
+	*/
+err:
 	if(options!=NULL)
 		av_dict_free(&options);
 	return 0;
 }
-int dshow_try_open_devices(AVFormatContext	** ctx,const char* psDevName,AVInputFormat *ifmt,int width, int height, int fps,const char* fmt)
+static bool check_video(AVFormatContext* pFmtCtx)
+{
+
+	if(avformat_find_stream_info(pFmtCtx,NULL)<0)
+	{
+		av_log(NULL,AV_LOG_ERROR,"Couldn't find stream information.（无法获取视频流信息）\n");
+		return false;
+	}
+	return true;
+}
+int dshow_try_open_devices(AVFormatContext	** ctx,const char* psDevName,int index,AVInputFormat *ifmt,int width, int height, int fps,const char* fmt)
 {
 	int fps_arr[5] = {10,15,20,25,30};
 	
-	if(dshow_try_open_devices2(ctx,psDevName,ifmt,width,height,fps,fmt) == 0) return fps;
+	
+	if(dshow_try_open_devices2(ctx,psDevName,index,ifmt,width,height,fps,fmt) == 0) return fps;
 	av_log(NULL,AV_LOG_ERROR,"%d orig fps can not open\r\n",fps);
 	for(int i = 10; i <= 30; i++)
 	{
 		
-		if(dshow_try_open_devices2(ctx,psDevName,ifmt,width,height,i,fmt) == 0)
+		if(dshow_try_open_devices2(ctx,psDevName,index,ifmt,width,height,i,fmt) == 0)
 		{
 			av_log(NULL,AV_LOG_ERROR,"%d fps open ok\r\n",i);
 			return i;

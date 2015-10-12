@@ -46,6 +46,8 @@ enum SDK_RECORD_ERR{
 	ERR_RECORD_NOT_OPEN_DEVS,	//未打开音视频设备,录像启动失败.
 	ERR_RECORD_OPEN_FILE,	//创建录像文件失败.
 	ERR_RECORD_OPEN_FILTER,
+	ERR_RECORD_VIDEO_INDEX, //错误的摄像头序号
+	ERR_RECORD_AUDIO_INDEX, //错误的音频设备序号.
 };
 
 /**
@@ -92,6 +94,17 @@ CLOUDWALKFACESDK_API  int  SDK_CallMode   CloudWalk_OpenDevices(
 													const char* pVideoDevice,
 													const char* pVideoDevice2,
 													const char* pAudioDevice,
+													const  unsigned  int width,
+													const unsigned  int height,
+													const unsigned  int FrameRate,
+													int sampleRateInHz,
+													int channelConfig,
+													Video_Callback video_callback);
+
+CLOUDWALKFACESDK_API  int  SDK_CallMode   CloudWalk_OpenDevices2(
+													int video1,
+													int video2,
+													int audio1,
 													const  unsigned  int width,
 													const unsigned  int height,
 													const unsigned  int FrameRate,

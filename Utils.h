@@ -21,8 +21,8 @@ bool resetDevciesString(int num);
 
 void dshow_dump_params(AVFormatContext	** ctx,const char* psDevName,AVInputFormat *ifmt);
 void dshow_dump_devices(AVFormatContext	** ctx,const char* psDevName,AVInputFormat *ifmt);
-int dshow_try_open_devices(AVFormatContext	** ctx,const char* psDevName,AVInputFormat *ifmt,int width, int height, int fps,const char* fmt);
-
+int dshow_try_open_devices(AVFormatContext	** ctx,const char* psDevName,int index,AVInputFormat *ifmt,int width, int height, int fps,const char* fmt);
+int find_stream_index(AVFormatContext* pCtx,enum AVMediaType type );
 
 class MyFile
 {

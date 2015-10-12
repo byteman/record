@@ -38,6 +38,12 @@ extern "C"
 static int FPS = 25;
 RecordMux recMux;
 
+#define MAX_DEVICES_NUM 10
+#define MAX_DEVICES_NAME_SIZE 128
+static char pStrDevices[MAX_DEVICES_NUM][MAX_DEVICES_NAME_SIZE]={{}};
+static char* pStrings[MAX_DEVICES_NUM];
+
+
 int init_ffmpeg_env(HMODULE handle)
 {
 	
@@ -92,7 +98,77 @@ CLOUDWALKFACESDK_API  int  SDK_CallMode CloudWalk_RecordStart (const char* fileP
 	//设置完输出文件的参数后，启动录制
 	return ERR_RECORD_OK;
 }
+CLOUDWALKFACESDK_API  int  SDK_CallMode   CloudWalk_OpenDevices2(
+													int video1,
+													int video2,
+													int audio1,
+													const  unsigned  int width,
+													const unsigned  int height,
+													const unsigned  int FrameRate,
+													int sampleRateInHz,
+													int channelConfig,
+													Video_Callback video_callback)
+{
+	int count = 0;
+	int ret = 0;
+	FPS = FrameRate;
+	av_log(NULL,AV_LOG_ERROR,"CloudWalk_OpenDevices video1=%d,video2=%d,audio=%d width=%d height=%d framerate=%d\r\n",\
+			video1,video2,audio1,width,height,FrameRate);
 
+	char** pVideos = CloudWalk_ListDevices(0,&count);
+	if(count <= 0) return ERR_RECORD_VIDEO_INDEX;
+	if(count < video1)return ERR_RECORD_VIDEO_INDEX;
+	if(count < video2)return ERR_RECORD_VIDEO_INDEX;
+	if(video1 == video2) return ERR_RECORD_VIDEO_INDEX;
+
+	
+	if(strcmp(pVideos[video1],pVideos[video2]) !=0 )
+	{
+		std::string str_video1 = pVideos[video1];
+		std::string str_video2 = pVideos[video2];
+		char** pAudios = CloudWalk_ListDevices(1,&count);
+		if(count <= 0) return ERR_RECORD_AUDIO_INDEX;
+		if(count < audio1)return ERR_RECORD_AUDIO_INDEX;
+		return CloudWalk_OpenDevices(str_video1.c_str(),str_video2.c_str(),pAudios[audio1],width,height,FrameRate,sampleRateInHz,channelConfig,video_callback);
+	}
+
+	if(video1 > video2)
+	{
+		video1 = 1;
+		video2 = 0;
+	}
+	else
+	{
+		video1 = 0;
+		video2 = 1;
+	}
+
+	ret = recMux.OpenCamera(getDevicePath("video",pVideos[video1]).c_str(),video1,width,height,FrameRate,AV_PIX_FMT_BGR24, video_callback);
+	if(ret != ERR_RECORD_OK)
+	{
+		av_log(NULL,AV_LOG_ERROR,"OpenCamera failed\r\n");
+		return ret;
+	}
+	ret = recMux.OpenCamera(getDevicePath("video",pVideos[video2]).c_str(),video2,width,height,FrameRate,AV_PIX_FMT_BGR24, video_callback);
+	if(ret != ERR_RECORD_OK)
+	{
+		av_log(NULL,AV_LOG_ERROR,"OpenCamera failed\r\n");
+		return ret;
+	}
+
+	char** pAudios = CloudWalk_ListDevices(1,&count);
+	if(count <= 0) return ERR_RECORD_AUDIO_INDEX;
+	if(count < audio1)return ERR_RECORD_AUDIO_INDEX;
+
+	ret = recMux.OpenAudio(getDevicePath("audio",pAudios[audio1]).c_str());
+	if(ret != ERR_RECORD_OK)
+	{
+		av_log(NULL,AV_LOG_ERROR,"OpenAudio failed\r\n");
+		return ret;
+	}
+
+	return 0;
+}
 
 int  SDK_CallMode   CloudWalk_OpenDevices(
 													const char* pVideoDevice,
@@ -110,18 +186,21 @@ int  SDK_CallMode   CloudWalk_OpenDevices(
 	FPS = FrameRate;
 	av_log(NULL,AV_LOG_ERROR,"CloudWalk_OpenDevices vidoe=%s,audio=%s width=%d height=%d framerate=%d\r\n",\
 			pVideoDevice,pAudioDevice,width,height,FrameRate);
-	AVInputFormat *pDShowInputFmt = av_find_input_format("dshow");
-	if(pDShowInputFmt == NULL)
-	{
-		av_log(NULL,AV_LOG_ERROR,"dshow init failed\r\n");
-		return ERR_RECORD_DSHOW_OPEN;
-	}
-	ret = recMux.OpenCamera(getDevicePath("video",pVideoDevice).c_str(),getDevicePath("video",pVideoDevice2).c_str(),width,height,FrameRate,AV_PIX_FMT_RGB24, video_callback);
+
+	ret = recMux.OpenCamera(getDevicePath("video",pVideoDevice).c_str(),-1,width,height,FrameRate,AV_PIX_FMT_BGR24, video_callback);
 	if(ret != ERR_RECORD_OK)
 	{
 		av_log(NULL,AV_LOG_ERROR,"OpenCamera failed\r\n");
 		return ret;
 	}
+#if 1
+	ret = recMux.OpenCamera(getDevicePath("video",pVideoDevice2).c_str(),-1,width,height,FrameRate,AV_PIX_FMT_BGR24, video_callback);
+	if(ret != ERR_RECORD_OK)
+	{
+		av_log(NULL,AV_LOG_ERROR,"OpenCamera failed\r\n");
+		return ret;
+	}
+#endif
 	ret = recMux.OpenAudio(getDevicePath("audio",pAudioDevice).c_str());
 	if(ret != ERR_RECORD_OK)
 	{
@@ -140,10 +219,6 @@ void FreeAllRes()
 
 	CloseDevices();
 }
-#define MAX_DEVICES_NUM 10
-#define MAX_DEVICES_NAME_SIZE 128
-static char pStrDevices[MAX_DEVICES_NUM][MAX_DEVICES_NAME_SIZE]={{}};
-static char* pStrings[MAX_DEVICES_NUM];
 
 bool resetDevciesString(int num)
 {

@@ -7,7 +7,7 @@
 class VideoCap{
 public:
 	VideoCap(int chan);
-	int OpenPreview(const char* psDevName,AVInputFormat *ifmt,const unsigned  int width,
+	int OpenPreview(const char* psDevName,int index,AVInputFormat *ifmt,const unsigned  int width,
 													const unsigned  int height,
 													const unsigned  int FrameRate,AVPixelFormat cap_format,AVPixelFormat format, Video_Callback pCbFunc);
 	bool SetCallBackAttr(int width, int height, AVPixelFormat format,Video_Callback pCbFunc);
@@ -23,7 +23,7 @@ public:
 	int StartRecord(AVPixelFormat format, int width, int height);
 	int StopRecord();
 private:
-	int OpenVideoCapture(AVFormatContext** pFmtCtx, AVCodecContext	** pCodecCtx,const char* psDevName,AVInputFormat *ifmt,const unsigned  int width,
+	int OpenVideoCapture(AVFormatContext** pFmtCtx, AVCodecContext	** pCodecCtx,const char* psDevName,int index,AVInputFormat *ifmt,const unsigned  int width,
 													const unsigned  int height,
 													const unsigned  int FrameRate,const char* fmt);
 	AVFormatContext* pFormatContext;
