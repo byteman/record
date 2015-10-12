@@ -42,6 +42,7 @@ public:
 	bool Open(const char* file,AVPixelFormat format, int width, int height,int fps);
 	bool Close();
 	int  FillBuffer(unsigned char val, int size);
+	int  FillTestBuffer();
 	int	 WriteFrame(AVFrame* frame);
 	int  WriteBuffer(void* buffer, int size);
 	int  WriteRGB24(AVFrame* frame);

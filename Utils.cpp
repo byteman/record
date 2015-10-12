@@ -428,6 +428,27 @@ int  MyFile::FillBuffer(unsigned char val, int size)
 	}
 	return rt;
 }
+int  MyFile::FillTestBuffer()
+{
+	int i = 0;
+	for(i = 0 ; i < 120; i++)
+		FillBuffer(0x23,320);
+	for(i = 0 ; i < 120; i++)
+		FillBuffer(0x80,320);
+
+	for(i = 0 ; i < 60; i++)
+		FillBuffer(0x23,160);
+	for(i = 0 ; i < 60; i++)
+		FillBuffer(0x80,160);
+
+	for(i = 0 ; i < 60; i++)
+		FillBuffer(0x23,160);
+	for(i = 0 ; i < 60; i++)
+		FillBuffer(0x80,160);
+	return 0;
+
+
+}
 int MyFile::WriteFrame(AVFrame* frame)
 {
 	int ret = 0;

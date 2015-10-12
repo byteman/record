@@ -233,14 +233,7 @@ RecordMux::RecordMux()
 	recordThreadQuit = true;
 	cur_pts_v = cur_pts_a = 0;
 	pDShowInputFmt = NULL;
-#if 0
-	MyFile f("111.yuv");
-	f.FillBuffer(0x0, 320*240*1);
-	f.FillBuffer(0x80, 320*240/4);
-	f.FillBuffer(0x80, 320*240/4);
-	MyFile f2("222.yuv");
-	f2.FillBuffer(0xFF, 320*240*1.5);
-#endif
+
 	
 }
 /*
@@ -307,69 +300,36 @@ AVFrame* RecordMux::MergeFrame(AVFrame* frame1, AVFrame* frame2)
 {
 	int offset = 0;
 	int i = 0;
-#if 0
-	for( i = 0; i < frame1->height; i++)
-	{
-		memset(pRecFrame->data[0]+offset,0x0,frame1->width);
-		offset+=frame1->width;
-		memset(pRecFrame->data[0]+offset,0xFF,frame1->width);
-		
-		offset+=frame1->width;
-	}
-	offset = 0;
-
-	for( i = 0; i < frame1->height/2; i++)
-	{
-		memset(pRecFrame->data[1]+offset,0x0,frame1->width/2);
-		offset+=frame1->width/2;
-		memset(pRecFrame->data[1]+offset,0x0,frame1->width/2);
-		
-		offset+=frame1->width/2;
-	}
-	offset = 0;
-
-	for( i = 0; i < frame1->height/2; i++)
-	{
-		memset(pRecFrame->data[2]+offset,0x0,frame1->width/2);
-		offset+=frame1->width/2;
-		memset(pRecFrame->data[2]+offset,0x0,frame1->width/2);
-		
-		offset+=frame1->width/2;
-	}
-	offset = 0;
-
-
 	
-	return NULL;
-#endif
 	//file1.ReadYUV420P(frame1);
 	//file2.ReadYUV420P(frame2);
+
 	offset = 0;
 	for( i = 0; i < frame1->height; i++)
 	{
-		memcpy(pRecFrame->data[0]+offset, frame1->data[0], frame1->width);
+		memcpy(pRecFrame->data[0]+offset, frame1->data[0]+i*frame1->width, frame1->width);
 		offset+=frame1->width;
-		memcpy(pRecFrame->data[0]+offset, frame2->data[0], frame2->width);
+		memcpy(pRecFrame->data[0]+offset, frame2->data[0]+i*frame2->width, frame2->width);
 		offset+=frame2->width;
 	}
 	offset = 0;
+	int w1 = frame1->width/2;
+	int w2 = frame2->width/2;
+
 	for( i = 0; i < frame1->height/2; i++)
 	{
-		memcpy(pRecFrame->data[1]+offset, frame1->data[1], frame1->width/2);
-		offset+=frame1->width/2;
-		memcpy(pRecFrame->data[1]+offset, frame2->data[1], frame2->width/2);
-		offset+=frame1->width/2;
+
+		memcpy(pRecFrame->data[1]+offset, frame1->data[1]+i*w1, w1);	
+		memcpy(pRecFrame->data[2]+offset, frame1->data[2]+i*w1, w1);
+		offset+= w1;
+
+		memcpy(pRecFrame->data[1]+offset, frame2->data[1]+i*w2, w2);
+		memcpy(pRecFrame->data[2]+offset, frame2->data[2]+i*w2, w2);
+
+		offset+=w2;
 		
 	}
-	offset = 0;
-	for( i = 0; i < frame1->height/2; i++)
-	{
-		memcpy(pRecFrame->data[2]+offset, frame1->data[2], frame1->width/2);
-		offset+=frame1->width/2;
-		memcpy(pRecFrame->data[2]+offset, frame2->data[2], frame2->width/2);
-		offset+=frame1->width/2;
-		
-	}
+
 	return pRecFrame;
 
 }
@@ -541,8 +501,17 @@ int RecordMux::OpenAudio(const char * psDevName)
 }
 int RecordMux::Init()
 {
+#if 0
+	MyFile f("111.yuv");
+	f.FillTestBuffer();
+	
+	MyFile f2("222.yuv");
+	f2.FillBuffer(0xFF, 320*240*1.5);
+
 	file1.Open("111.yuv",AV_PIX_FMT_YUV420P,320,240,10);
 	file2.Open("222.yuv",AV_PIX_FMT_YUV420P,320,240,10);
+#endif
+	
 	pDShowInputFmt = av_find_input_format("dshow");
 	return 0;
 }
