@@ -13,6 +13,7 @@ extern "C"
 #include "libavfilter/buffersrc.h" 
 #include "libavutil/pixdesc.h"
 
+
 #pragma comment(lib, "avcodec.lib")
 #pragma comment(lib, "avformat.lib")
 #pragma comment(lib, "avutil.lib")
@@ -24,6 +25,7 @@ extern "C"
 };
 #endif
 #include "VideoCapture.h"
+#include "CaptureDevices.h"
 #include "Utils.h"
 
 
@@ -33,10 +35,28 @@ int VideoCap::OpenVideoCapture(AVFormatContext** pFmtCtx, AVCodecContext	** pCod
 {
 	int fps = 0;
 	int idx = 0;
+
 	AVCodec* pCodec = NULL;
-	dshow_dump_params(pFmtCtx,psDevName,ifmt);
-	dshow_dump_devices(pFmtCtx,psDevName,ifmt);
-	fps = dshow_try_open_devices(pFmtCtx, psDevName,index, ifmt,width, height, FrameRate,fmt);
+	std::string dshow_path = getDevicePath("video",psDevName);
+	dshow_dump_params(pFmtCtx, dshow_path.c_str(),ifmt);
+	dshow_dump_devices(pFmtCtx,dshow_path.c_str(),ifmt);
+	CaptureDevices cap_devs;
+	cap_devs.ListCapablities(psDevName,0);
+	My_Info info;
+	info.pixel_format = AV_PIX_FMT_YUYV422;
+	info.fps = FrameRate;
+	info.height = height;
+	info.width  = width;
+
+	fps = FrameRate;
+	if(!cap_devs.GetBestCap(psDevName,AV_PIX_FMT_NONE,width,height,FrameRate,info))
+	{
+		//return -6;
+	}
+
+	fps = dshow_try_open_devices(pFmtCtx, dshow_path.c_str(),index, ifmt,info.pixel_format,info.width, info.height, info.fps);
+	
+	
 	if(fps == 0) 
 	{
 		return -1;
@@ -115,7 +135,7 @@ void VideoCap::Run( )
 	int got_picture = 0;
 	bCapture = true;
 	AVFrame	*pFrame; //存放从摄像头解码后得到的一帧数据.这个数据应该就是YUYV422，高度和宽度是预览的高度和宽度.
-	
+	evt_ready.set();
 	pFrame = av_frame_alloc();//分配一个帧，用于解码输入视频流.
 	
 	//分配一个Frame用作存放RGB24格式的预览视频.
@@ -152,7 +172,7 @@ void VideoCap::Run( )
 
 					sws_scale(sws_ctx, (const uint8_t* const*)pFrame->data, pFrame->linesize, 0, 
 							pCodecContext->height, pPreviewFrame->data, pPreviewFrame->linesize);
-					pCallback(channel+1,pPreviewFrame->data[0], pCodecContext->width ,pCodecContext->height);
+					pCallback(channel,pPreviewFrame->data[0], pCodecContext->width ,pCodecContext->height);
 					if( (pCodecContext->width!=640) || (pCodecContext->height!=480))
 					{
 						av_log(NULL,AV_LOG_INFO,"width=%d,height=%d\r\n",pCodecContext->width,pCodecContext->height);
@@ -203,7 +223,7 @@ void VideoCap::Run( )
 		av_fifo_free(fifo_video);
 		fifo_video = 0;
 	}
-
+	evt_quit.set();
 	bQuit = 1;
 
 	
@@ -228,17 +248,28 @@ int VideoCap::OpenPreview(const char* psDevName,int index,AVInputFormat *ifmt,co
 		av_log(NULL,AV_LOG_ERROR,"SetCallBackAttr failed\r\n");
 		return ERR_RECORD_VIDEO_OPEN;
 	}
+	
+	return ret;
+}
+int VideoCap::Start()
+{
 	HANDLE handle = CreateThread( NULL, 0, VideoCapThreadProc, this, 0, NULL);
 	if(handle == NULL)
 	{
 		av_log(NULL,AV_LOG_ERROR,"CreateThread VideoCapThreadProc failed\r\n");
 		return ERR_RECORD_VIDEO_OPEN;
 	}
+	//evt_ready.wait(1000);
+	if(!evt_ready.wait(1000))return ERR_RECORD_VIDEO_OPEN;
 
-	return ret;
+	return ERR_RECORD_OK;
 }
-
-VideoCap::VideoCap(int chan)
+int VideoCap::Stop()
+{
+	return ERR_RECORD_OK;
+}
+VideoCap::VideoCap(int chan):
+	channel(chan)
 {
 	pFormatContext = NULL;
 	pCodecContext = NULL;
@@ -249,12 +280,14 @@ VideoCap::VideoCap(int chan)
 	pCallback = NULL;
 	fifo_video = NULL;
 	sws_ctx = NULL;
-	channel = chan;
 	InitializeCriticalSection(&section);
 }
 int VideoCap::Close()
 {
 	bCapture = false;
+	if(!evt_quit.wait(1000))return ERR_RECORD_VIDEO_OPEN;
+	//evt_quit.wait(1000);
+	return ERR_RECORD_OK;
 	//等待线程结束.
 	return 0;
 }

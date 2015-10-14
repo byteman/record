@@ -21,7 +21,7 @@ bool resetDevciesString(int num);
 
 void dshow_dump_params(AVFormatContext	** ctx,const char* psDevName,AVInputFormat *ifmt);
 void dshow_dump_devices(AVFormatContext	** ctx,const char* psDevName,AVInputFormat *ifmt);
-int dshow_try_open_devices(AVFormatContext	** ctx,const char* psDevName,int index,AVInputFormat *ifmt,int width, int height, int fps,const char* fmt);
+int dshow_try_open_devices(AVFormatContext	** ctx,const char* psDevName,int index,AVInputFormat *ifmt,AVPixelFormat format,int width, int height, int fps);
 int find_stream_index(AVFormatContext* pCtx,enum AVMediaType type );
 
 class MyFile
@@ -63,4 +63,22 @@ private:
 	AVPixelFormat _format;
 	unsigned char _buffer[320*240*3];
 };
+
+class  Win32Event
+{
+public:
+	Win32Event(bool autoReset=true);		
+	~Win32Event();
+	void set();
+	void wait();
+	bool wait(long milliseconds);
+	void reset();
+	
+private:
+	HANDLE _event;
+};
+
+
+
+
 #endif

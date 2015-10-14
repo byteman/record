@@ -143,19 +143,20 @@ CLOUDWALKFACESDK_API  int  SDK_CallMode   CloudWalk_OpenDevices2(
 		video2 = 1;
 	}
 
-	ret = recMux.OpenCamera(getDevicePath("video",pVideos[video1]).c_str(),video1,width,height,FrameRate,AV_PIX_FMT_BGR24, video_callback);
+	ret = recMux.OpenCamera(pVideos[video1],video1,width,height,FrameRate,AV_PIX_FMT_BGR24, video_callback);
 	if(ret != ERR_RECORD_OK)
 	{
 		av_log(NULL,AV_LOG_ERROR,"OpenCamera failed\r\n");
 		return ret;
 	}
-	ret = recMux.OpenCamera(getDevicePath("video",pVideos[video2]).c_str(),video2,width,height,FrameRate,AV_PIX_FMT_BGR24, video_callback);
+#if 1
+	ret = recMux.OpenCamera(pVideos[video2],video2,width,height,FrameRate,AV_PIX_FMT_BGR24, video_callback);
 	if(ret != ERR_RECORD_OK)
 	{
 		av_log(NULL,AV_LOG_ERROR,"OpenCamera failed\r\n");
 		return ret;
 	}
-
+#endif
 	char** pAudios = CloudWalk_ListDevices(1,&count);
 	if(count <= 0) return ERR_RECORD_AUDIO_INDEX;
 	if(count < audio1)return ERR_RECORD_AUDIO_INDEX;
@@ -166,7 +167,7 @@ CLOUDWALKFACESDK_API  int  SDK_CallMode   CloudWalk_OpenDevices2(
 		av_log(NULL,AV_LOG_ERROR,"OpenAudio failed\r\n");
 		return ret;
 	}
-
+	recMux.StartCap();
 	return 0;
 }
 
@@ -187,14 +188,14 @@ int  SDK_CallMode   CloudWalk_OpenDevices(
 	av_log(NULL,AV_LOG_ERROR,"CloudWalk_OpenDevices vidoe=%s,audio=%s width=%d height=%d framerate=%d\r\n",\
 			pVideoDevice,pAudioDevice,width,height,FrameRate);
 
-	ret = recMux.OpenCamera(getDevicePath("video",pVideoDevice).c_str(),-1,width,height,FrameRate,AV_PIX_FMT_BGR24, video_callback);
+	ret = recMux.OpenCamera(pVideoDevice,-1,width,height,FrameRate,AV_PIX_FMT_BGR24, video_callback);
 	if(ret != ERR_RECORD_OK)
 	{
 		av_log(NULL,AV_LOG_ERROR,"OpenCamera failed\r\n");
 		return ret;
 	}
 #if 1
-	ret = recMux.OpenCamera(getDevicePath("video",pVideoDevice2).c_str(),-1,width,height,FrameRate,AV_PIX_FMT_BGR24, video_callback);
+	ret = recMux.OpenCamera(pVideoDevice2,-1,width,height,FrameRate,AV_PIX_FMT_BGR24, video_callback);
 	if(ret != ERR_RECORD_OK)
 	{
 		av_log(NULL,AV_LOG_ERROR,"OpenCamera failed\r\n");
@@ -207,6 +208,7 @@ int  SDK_CallMode   CloudWalk_OpenDevices(
 		av_log(NULL,AV_LOG_ERROR,"OpenAudio failed\r\n");
 		return ret;
 	}
+	recMux.StartCap();
 
 	return 0;
 
@@ -235,11 +237,11 @@ char** SDK_CallMode CloudWalk_ListDevices(int  devType, int* devCount)
 {
 	CaptureDevices *capDev = new CaptureDevices();
 	vector<wstring> videoDevices, audioDevices;
-
+	
 	//这里获取到的字符串就是以GBK编码的宽字符.
 	capDev->GetVideoDevices(&videoDevices);
 	capDev->GetAudioDevices(&audioDevices);
-
+	
 	delete capDev;
 	
 	for(int i = 0;  i < MAX_DEVICES_NUM;i++)

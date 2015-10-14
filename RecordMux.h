@@ -18,6 +18,7 @@ public:
 	int Stop();
 	void Run();
 	int Close();
+	bool StartCap();
 	
 private:
 	int OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioInfo* pAudioInfo,SubTitleInfo* pSubTitle);

@@ -2,7 +2,8 @@
 #define VIDEO_CAPTURE_H
 
 #include "Recorder.h"
-
+#include "Utils.h"
+#include "Poco\Event.h"
 
 class VideoCap{
 public:
@@ -22,7 +23,10 @@ public:
 	AVFrame* GetLastSample();
 	int StartRecord(AVPixelFormat format, int width, int height);
 	int StopRecord();
+	int Start();
+	int Stop();
 private:
+
 	int OpenVideoCapture(AVFormatContext** pFmtCtx, AVCodecContext	** pCodecCtx,const char* psDevName,int index,AVInputFormat *ifmt,const unsigned  int width,
 													const unsigned  int height,
 													const unsigned  int FrameRate,const char* fmt);
@@ -47,5 +51,9 @@ private:
 	int nSampleSize;
 	int nRGB24Size;
 	int channel;
+	//Poco::Event evt_ready;
+	//Poco::Event evt_quit;
+	Win32Event evt_ready;
+	Win32Event evt_quit;
 };
 #endif

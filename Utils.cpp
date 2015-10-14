@@ -13,6 +13,7 @@ extern "C"
 #include "libavformat/avformat.h"
 #include "libswscale/swscale.h"
 #include "libavdevice/avdevice.h"
+#include "libavutil/pixdesc.h"
 
 #ifdef __cplusplus
 };
@@ -368,19 +369,19 @@ int find_stream_index(AVFormatContext* pCtx,enum AVMediaType type )
 	return index;
 }
 
-static int dshow_try_open_devices2(AVFormatContext	** ctx,const char* psDevName,int index,AVInputFormat *ifmt,int width, int height, int fps,const char* fmt)
+static int dshow_try_open_devices2(AVFormatContext	** ctx,const char* psDevName,int index,AVInputFormat *ifmt,AVPixelFormat format,int width, int height, int fps)
 {
 	int ret = 0;
 	int fmt_index = -1;
 	const char* formats[] = {"yuv420p","yuyv422","yuv422p","rgb24","bgr24"};
 	AVDictionary *options = NULL;
 	char buf[16] = {0,};
-	_snprintf_s(buf,16,"%d",fps);
 	
-	av_dict_set(&options, "framerate", buf, NULL);
-	memset(buf,0,16);
-	_snprintf_s(buf,16,"%d",width*height*3*fps);
-	av_dict_set(&options, "rtbufsize", buf, NULL);
+	
+	if(fps!=0)
+		av_dict_set_int(&options, "framerate", fps, NULL);
+	
+	av_dict_set_int(&options, "rtbufsize", width*height*3*(fps<=0?30:fps), NULL);
 	memset(buf,0,16);
 	_snprintf_s(buf,16,"%dx%d",width,height);
 	av_dict_set(&options, "video_size", buf, NULL);
@@ -391,8 +392,11 @@ static int dshow_try_open_devices2(AVFormatContext	** ctx,const char* psDevName,
 	
     //av_dict_set(&options, "scan_all_pmts", "1", AV_DICT_DONT_OVERWRITE);
 
-	if(fmt_index > -1)
-		av_dict_set(&options, "pixel_format", formats[fmt_index], NULL);
+	if(format != AV_PIX_FMT_NONE)
+	{
+		//const char* name = av_get_pix_fmt_name(format);
+		av_dict_set_int(&options, "pixel_format", format, NULL);
+	}
 	if(avformat_open_input(ctx, psDevName, ifmt, &options)!=0)
 		//if(avformat_open_input(&pFormatCtx_Video, psDevName, ifmt, NULL)!=0)
 	{
@@ -434,23 +438,25 @@ static bool check_video(AVFormatContext* pFmtCtx)
 	}
 	return true;
 }
-int dshow_try_open_devices(AVFormatContext	** ctx,const char* psDevName,int index,AVInputFormat *ifmt,int width, int height, int fps,const char* fmt)
+int dshow_try_open_devices(AVFormatContext	** ctx,const char* psDevName,int index,AVInputFormat *ifmt,AVPixelFormat format,int width, int height, int fps)
 {
 	int fps_arr[5] = {10,15,20,25,30};
 	
 	
-	if(dshow_try_open_devices2(ctx,psDevName,index,ifmt,width,height,fps,fmt) == 0) return fps;
+	if(dshow_try_open_devices2(ctx,psDevName,index,ifmt,format,width,height,fps) == 0) return fps;
+#if 0
 	av_log(NULL,AV_LOG_ERROR,"%d orig fps can not open\r\n",fps);
 	for(int i = 10; i <= 30; i++)
 	{
 		
-		if(dshow_try_open_devices2(ctx,psDevName,index,ifmt,width,height,i,fmt) == 0)
+		if(dshow_try_open_devices2(ctx,psDevName,index,ifmt,format,width,height,i) == 0)
 		{
 			av_log(NULL,AV_LOG_ERROR,"%d fps open ok\r\n",i);
 			return i;
 		}
 		av_log(NULL,AV_LOG_ERROR,"%d fps can not open\r\n",i);
 	}
+#endif
 	return 0;
 }
 
@@ -613,4 +619,60 @@ bool MyFile::ReadYUV420P(AVFrame* frame)
 
 	return (ret == _frameSize);
 
+}
+Win32Event::Win32Event(bool autoReset)
+{
+	_event = CreateEventW(NULL, autoReset ? FALSE : TRUE, FALSE, NULL);
+	
+}
+
+
+Win32Event::~Win32Event()
+{
+	CloseHandle(_event);
+}
+
+
+void Win32Event::wait()
+{
+	switch (WaitForSingleObject(_event, INFINITE))
+	{
+	case WAIT_OBJECT_0:
+		return;
+	default:
+		return;
+	}
+}
+
+
+bool Win32Event::wait(long milliseconds)
+{
+	switch (WaitForSingleObject(_event, milliseconds + 1))
+	{
+	case WAIT_TIMEOUT:
+		return false;
+	case WAIT_OBJECT_0:
+		return true;
+	default:
+		return false;	
+	}
+}
+//
+// inlines
+//
+void Win32Event::set()
+{
+	if (!SetEvent(_event))
+	{
+		
+	}
+}
+
+
+void Win32Event::reset()
+{
+	if (!ResetEvent(_event))
+	{
+		
+	}
 }

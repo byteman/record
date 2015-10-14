@@ -289,8 +289,10 @@ int RecordMux::Close()
 	for(int i = 0; i < pVideoCaps.size();i++)
 	{
 		pVideoCaps[i]->Close();
+		delete pVideoCaps[i];
 	}
 	
+	pVideoCaps.clear();
 
 	return 0;
 }
@@ -495,7 +497,15 @@ void RecordMux::Run()
 	av_log(NULL,AV_LOG_INFO,"app  exit\r\n");
 	
 }
-
+bool RecordMux::StartCap()
+{
+	for(int i = 0; i < pVideoCaps.size();i++)
+	{
+		pVideoCaps[i]->Start();
+		
+	}
+	return true;
+}
 int RecordMux::OpenCamera(const char* psDevName,int index,const unsigned  int width,
 													const unsigned  int height,
 													const unsigned  int FrameRate,AVPixelFormat format, Video_Callback pCbFunc)
