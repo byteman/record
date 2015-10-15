@@ -352,9 +352,9 @@ void RecordMux::Run()
 	bStartRecord = true;
 	cur_pts_v = cur_pts_a = 0; //复位音视频的pts
 	VideoFrameIndex = AudioFrameIndex = 0; //复位音视频的帧序.
-	MyFile file11("1.yuv");
-	MyFile file22("2.yuv");
-	MyFile file33("12.yuv");
+	//MyFile file11("1.yuv");
+	//MyFile file22("2.yuv");
+	//MyFile file33("12.yuv");
 	while(bStartRecord) //启动了录像标志，才进行录像，否则退出线程
 	{
 
@@ -506,9 +506,11 @@ bool RecordMux::StartCap()
 	}
 	return true;
 }
+#include "CaptureDevices.h"
+
 int RecordMux::OpenCamera(const char* psDevName,int index,const unsigned  int width,
 													const unsigned  int height,
-													const unsigned  int FrameRate,AVPixelFormat format, Video_Callback pCbFunc)
+													unsigned  int &FrameRate,AVPixelFormat format, Video_Callback pCbFunc)
 {
 	int rt = 0;
 	if(pDShowInputFmt == NULL)Init();

@@ -639,7 +639,7 @@ void CaptureDevices::dshow_cycle_formats(AVFormatContext *avctx, enum dshowDevic
 			info.name = str;
 			info.pixel_format = pix_fmt;
 			info.max_fps = 1e7 / vcaps->MinFrameInterval;
-			info.min_fps = 1e7 / vcaps->MaxFrameInterval;
+			info.min_fps = (1e7 / vcaps->MaxFrameInterval)+1;
 			info.max_size.cx = vcaps->MinOutputSize.cx;
 			info.max_size.cy = vcaps->MinOutputSize.cy;
 			info.min_size.cx = vcaps->MinOutputSize.cx;

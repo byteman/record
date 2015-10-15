@@ -31,15 +31,15 @@ extern "C"
 
 int VideoCap::OpenVideoCapture(AVFormatContext** pFmtCtx, AVCodecContext	** pCodecCtx,const char* psDevName,int index,AVInputFormat *ifmt,const unsigned  int width,
 													const unsigned  int height,
-													const unsigned  int FrameRate,const char* fmt)
+													unsigned  int &FrameRate,const char* fmt)
 {
 	int fps = 0;
 	int idx = 0;
 
 	AVCodec* pCodec = NULL;
 	std::string dshow_path = getDevicePath("video",psDevName);
-	dshow_dump_params(pFmtCtx, dshow_path.c_str(),ifmt);
-	dshow_dump_devices(pFmtCtx,dshow_path.c_str(),ifmt);
+	//dshow_dump_params(pFmtCtx, dshow_path.c_str(),ifmt);
+	//dshow_dump_devices(pFmtCtx,dshow_path.c_str(),ifmt);
 	CaptureDevices cap_devs;
 	cap_devs.ListCapablities(psDevName,0);
 	My_Info info;
@@ -95,7 +95,7 @@ int VideoCap::OpenVideoCapture(AVFormatContext** pFmtCtx, AVCodecContext	** pCod
 	{
 		av_log(NULL,AV_LOG_ERROR,"width=%d,height=%d fmt=%d\r\n",(*pCodecCtx)->width,(*pCodecCtx)->height,(*pCodecCtx)->pix_fmt);
 	}
-	
+	FrameRate = fps;
 	return 0;
 }
 
@@ -231,7 +231,7 @@ void VideoCap::Run( )
 
 int VideoCap::OpenPreview(const char* psDevName,int index,AVInputFormat *ifmt,const unsigned  int width,
 													const unsigned  int height,
-													const unsigned  int FrameRate,AVPixelFormat cap_format,AVPixelFormat format, Video_Callback pCbFunc)
+													unsigned  int &FrameRate,AVPixelFormat cap_format,AVPixelFormat format, Video_Callback pCbFunc)
 {
 	int ret = 0;
 	bQuit	 = false;

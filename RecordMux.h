@@ -11,7 +11,7 @@ public:
 	int Init();
 	int OpenCamera(const char* psDevName,int index,const unsigned  int width,
 													const unsigned  int height,
-													const unsigned  int FrameRate,AVPixelFormat format, Video_Callback pCbFunc);
+													unsigned  int &FrameRate,AVPixelFormat format, Video_Callback pCbFunc);
 
 	int OpenAudio(const char * psDevName);
 	int Start(const char* filePath,VideoInfo* pVideoInfo, AudioInfo* pAudioInfo,SubTitleInfo* pSubTitle);
@@ -23,6 +23,7 @@ public:
 private:
 	int OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioInfo* pAudioInfo,SubTitleInfo* pSubTitle);
 	AVFrame* MergeFrame(AVFrame* frame1, AVFrame* frame2);
+	int GetBestFps();
 	//VideoCap* pVideoCap[2];
 	//VideoCap* pVideoCap2;
 	VideoCapList pVideoCaps;

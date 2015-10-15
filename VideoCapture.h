@@ -10,7 +10,7 @@ public:
 	VideoCap(int chan);
 	int OpenPreview(const char* psDevName,int index,AVInputFormat *ifmt,const unsigned  int width,
 													const unsigned  int height,
-													const unsigned  int FrameRate,AVPixelFormat cap_format,AVPixelFormat format, Video_Callback pCbFunc);
+													unsigned  int &FrameRate,AVPixelFormat cap_format,AVPixelFormat format, Video_Callback pCbFunc);
 	bool SetCallBackAttr(int width, int height, AVPixelFormat format,Video_Callback pCbFunc);
 	int Close();
 	void Run( );
@@ -29,7 +29,7 @@ private:
 
 	int OpenVideoCapture(AVFormatContext** pFmtCtx, AVCodecContext	** pCodecCtx,const char* psDevName,int index,AVInputFormat *ifmt,const unsigned  int width,
 													const unsigned  int height,
-													const unsigned  int FrameRate,const char* fmt);
+													unsigned  int &FrameRate,const char* fmt);
 	AVFormatContext* pFormatContext;
 	AVCodecContext*  pCodecContext;
 	bool bCapture;
