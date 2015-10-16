@@ -65,11 +65,13 @@ int VideoCap::OpenVideoCapture(AVFormatContext** pFmtCtx, AVCodecContext	** pCod
 	//av_dict_set_int(&options,"analyzeduration",10000000,0);
 	//av_dict_set_int(&options,"probesize",1000000,0);
 	//analyzeduration
+#if 1
 	if(avformat_find_stream_info(*pFmtCtx,NULL)<0)
 	{
 		av_log(NULL,AV_LOG_ERROR,"Couldn't find stream information.（无法获取视频流信息）\n");
 		return -2;
 	}
+#endif
 	VideoIndex = find_stream_index(*pFmtCtx,AVMEDIA_TYPE_VIDEO);
 		
 	if(VideoIndex == -1)
@@ -133,11 +135,12 @@ void VideoCap::Run( )
 {
 	AVPacket packet;
 	int got_picture = 0;
+	int discard = 15;
 	bCapture = true;
 	AVFrame	*pFrame; //存放从摄像头解码后得到的一帧数据.这个数据应该就是YUYV422，高度和宽度是预览的高度和宽度.
 	evt_ready.set();
 	pFrame = av_frame_alloc();//分配一个帧，用于解码输入视频流.
-	
+	pts = 0;
 	//分配一个Frame用作存放RGB24格式的预览视频.
 	AVFrame* pPreviewFrame = alloc_picture(AV_PIX_FMT_BGR24,pCodecContext->width, pCodecContext->height,16);
 
@@ -179,26 +182,40 @@ void VideoCap::Run( )
 					}
 
 				}
-
+				
 				if(bStartRecord && fifo_video) //如果启动了录像，才推送视频数据到录像队列.
 				{
 					//转换视频帧为录像视频格式 YUYV422->YUV420P
 					//picture is yuv420 data.
+					pts++;
 
+					//av_log(NULL,AV_LOG_ERROR,"pts%d=%d\r\n",channel,pts);
 					sws_scale(record_sws_ctx, (const uint8_t* const*)pFrame->data, pFrame->linesize, 0, 
 							pFrame->height, pRecFrame->data, pRecFrame->linesize);
-
+#if 1
 					if (av_fifo_space(fifo_video) >= nSampleSize)
 					{
+						lost = 0;
 						EnterCriticalSection(&section);	
-					
+						DWORD tick = GetTickCount();
+						av_fifo_generic_write(fifo_video, &tick, sizeof(tick), NULL);
 						av_fifo_generic_write(fifo_video, pRecFrame->data[0], y_size , NULL);
 						av_fifo_generic_write(fifo_video, pRecFrame->data[1], y_size/4, NULL);
 						av_fifo_generic_write(fifo_video, pRecFrame->data[2], y_size/4, NULL);
-			
+						
 						LeaveCriticalSection(&section);
 	
 					}
+					else
+					{
+						
+						//av_log(NULL,AV_LOG_ERROR,"%d lost%d\r\n",channel,lost++);
+					}
+#else
+					EnterCriticalSection(&section);	
+					av_frame_copy(pRecFrame2,pRecFrame);
+					LeaveCriticalSection(&section);
+#endif
 				}
 				
 			}
@@ -234,8 +251,12 @@ int VideoCap::OpenPreview(const char* psDevName,int index,AVInputFormat *ifmt,co
 													unsigned  int &FrameRate,AVPixelFormat cap_format,AVPixelFormat format, Video_Callback pCbFunc)
 {
 	int ret = 0;
+	if(bCapture) 
+	{
+		//摄像头已经被打开了.
+		return ERR_RECORD_OK;
+	}
 	bQuit	 = false;
-	bCapture = true;
 	pCallback = pCbFunc;
 	const char* name = av_get_pix_fmt_name(cap_format);
 	ret = OpenVideoCapture(&pFormatContext,&pCodecContext,psDevName,index,ifmt,width,height,FrameRate,name);
@@ -253,6 +274,7 @@ int VideoCap::OpenPreview(const char* psDevName,int index,AVInputFormat *ifmt,co
 }
 int VideoCap::Start()
 {
+	if(bCapture) return ERR_RECORD_OK; 
 	HANDLE handle = CreateThread( NULL, 0, VideoCapThreadProc, this, 0, NULL);
 	if(handle == NULL)
 	{
@@ -273,17 +295,26 @@ VideoCap::VideoCap(int chan):
 {
 	pFormatContext = NULL;
 	pCodecContext = NULL;
-	bCapture = true;
+	bCapture = false;
 	VideoIndex = 0;
 	bQuit = false;
 	bStartRecord = false;
 	pCallback = NULL;
 	fifo_video = NULL;
 	sws_ctx = NULL;
+	lost = 0;
 	InitializeCriticalSection(&section);
+}
+VideoCap::~VideoCap()
+{
+	bCapture = false;
 }
 int VideoCap::Close()
 {
+	if(bCapture == false) 
+	{
+		return ERR_RECORD_OK;
+	}
 	bCapture = false;
 	if(!evt_quit.wait(1000))return ERR_RECORD_VIDEO_OPEN;
 	//evt_quit.wait(1000);
@@ -313,23 +344,122 @@ AVPixelFormat VideoCap::GetFormat()
 }
 AVFrame* VideoCap::GetLastSample()
 {
+	bool find = false;
 	AVFrame* frame = NULL;
-	if(fifo_video == NULL) return NULL;
+
 	frame = GetSample();
+
 	if(frame != NULL) return frame;
 
 	return pRecFrame2;
 }
+AVFrame* VideoCap::PeekSample()
+{
+	bool ok = true;
+	
+	if(fifo_video == NULL) ok = false;
+	if(av_fifo_size(fifo_video) < nSampleSize) ok = false;
+	
+	if(!ok){
+		//av_log(NULL,AV_LOG_ERROR,"vts%d=%d-\r\n",channel,vts++);
+		return NULL;
+	}
+	//av_log(NULL,AV_LOG_ERROR,"vts%d=%d\r\n",channel,vts++);
+	DWORD tick = 0;
+	EnterCriticalSection(&section);
+	uint8_t* offset = av_fifo_peek2(fifo_video,0);
+
+	memcpy(&tick, offset, sizeof(DWORD));
+	offset+=sizeof(DWORD);
+	memcpy(pRecFrame2->data[0], offset, y_size);
+	offset+=y_size;
+	memcpy(pRecFrame2->data[1], offset, y_size/4);
+	offset+=y_size/4;
+	memcpy(pRecFrame2->data[2], offset, y_size/4);
+	offset+=y_size/4;
+	
+	LeaveCriticalSection(&section);
+
+	pRecFrame2->pts = tick;
+	return pRecFrame2;
+}
+AVFrame* VideoCap::GetMatchFrame(DWORD timestamp)
+{
+	bool find = false;
+	bool first = true;
+	AVFrame* frame = NULL;
+	AVFrame* prev_frame = NULL;
+	DWORD timestamp2;
+	if(!GetTimeStamp(timestamp2))
+	{
+		//自己还没有数据包，返回上一个
+		return pRecFrame2;
+	}
+	if(timestamp < timestamp2)
+	{
+		frame = PeekSample();
+		return pRecFrame2;
+	}
+
+	do{
+		frame = GetSample();
+		if(frame != NULL)
+		{
+			prev_frame = frame;
+			if( timestamp <= frame->pts ) //找到时间戳匹配的帧
+			{
+				break;
+			}
+			else //自己的时间c小于另一路时间戳
+			{
+				
+			}
+		}
+		else
+		{
+			frame = prev_frame;
+			break;
+		}
+		first = false;
+		
+	}while( (frame!=NULL));
+
+	if(frame != NULL) return frame;
+
+	return pRecFrame2;
+}
+bool VideoCap::GetTimeStamp(DWORD &timeStamp)
+{
+	if(fifo_video == NULL) return false;
+	if(av_fifo_size(fifo_video) < nSampleSize) return false;
+	EnterCriticalSection(&section);
+	uint8_t* offset = av_fifo_peek2(fifo_video,0);
+	timeStamp = *((DWORD*)offset);
+	LeaveCriticalSection(&section);
+	
+	return true;
+}
 AVFrame* VideoCap::GetSample()
 {
-	if(fifo_video == NULL) return NULL;
-	if(av_fifo_size(fifo_video) < nSampleSize) return NULL;
-
+	bool ok = true;
+	
+	if(fifo_video == NULL) ok = false;
+	if(av_fifo_size(fifo_video) < nSampleSize) ok = false;
+	
+	if(!ok){
+		//av_log(NULL,AV_LOG_ERROR,"vts%d=%d-\r\n",channel,vts++);
+		return NULL;
+	}
+	//av_log(NULL,AV_LOG_ERROR,"vts%d=%d\r\n",channel,vts++);
+	DWORD tick = 0;
 	EnterCriticalSection(&section);
+	av_fifo_generic_read(fifo_video, &tick, sizeof(tick), NULL);
 	av_fifo_generic_read(fifo_video, pRecFrame2->data[0], y_size, NULL); //从队列中读取一帧YUV420P的数据帧,帧的大小预先算出.
 	av_fifo_generic_read(fifo_video, pRecFrame2->data[1], y_size/4, NULL); 
 	av_fifo_generic_read(fifo_video, pRecFrame2->data[2], y_size/4, NULL); 
+	
 	LeaveCriticalSection(&section);
+
 
 	/*
 				
@@ -337,6 +467,7 @@ AVFrame* VideoCap::GetSample()
 	pEncFrame->width  = pFmtContext->streams[VideoIndex]->codec->width;
 	pEncFrame->height =	pFmtContext->streams[VideoIndex]->codec->height;
 	*/
+	pRecFrame2->pts = tick;
 	return pRecFrame2;
 }
 int VideoCap::StartRecord(AVPixelFormat format, int width, int height)
@@ -355,7 +486,7 @@ int VideoCap::StartRecord(AVPixelFormat format, int width, int height)
 
 	nSampleSize = avpicture_get_size(format, width, height);
 	//申请30帧目标帧大小做video的fifo
-	fifo_video = av_fifo_alloc(30 * nSampleSize);
+	fifo_video = av_fifo_alloc(30 * (nSampleSize+sizeof(DWORD)));
 	if(fifo_video == NULL)
 	{
 		av_log(NULL,AV_LOG_ERROR,"alloc pic fifo failed\r\n");
@@ -367,7 +498,7 @@ int VideoCap::StartRecord(AVPixelFormat format, int width, int height)
 
 	y_size = width*height;
 	bStartRecord = true;
-
+	vts = 0;
 	return 0;
 }
 int VideoCap::StopRecord()

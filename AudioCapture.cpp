@@ -74,29 +74,39 @@ AudioCap::AudioCap()
 {
 	pFormatContext = NULL;
 	pCodecContext= NULL;
-	bCapture= true;
+	bCapture= false;
 	bQuit=false;
 	bStartRecord = false;
 	fifo_audio = NULL;
 	InitializeCriticalSection(&section);
 	sws_ctx=NULL;
+	pts = 0;
 }
 int AudioCap::Open(const char * psDevName, AVInputFormat *ifmt)
 {
 	int ret = 0;
+	if(bCapture) 
+	{
+		//摄像头已经被打开了.
+		return 0;
+	}
 	bQuit	 = false;
-	bCapture = true;
+	
 	
 	ret = OpenAudioCapture(&pFormatContext,psDevName,ifmt);
 	
 	CreateThread( NULL, 0, AudioCapThreadProc, this, 0, NULL);
-
+	evt_ready.wait(10000);
 	return ret;
 }
 
 int AudioCap::Close()
 {
+	if(bCapture==false)
+		return 0;
 	bCapture = false;
+	
+	evt_quit.wait(1000);
 	//等待线程结束.
 	return 0;
 }
@@ -108,8 +118,12 @@ void AudioCap::Run( )
 {
 	AVPacket pkt;
 	AVFrame *frame;
+	bCapture = true;
+	evt_ready.set();
+	pts = 0;
 	frame = av_frame_alloc();
 	int gotframe;
+	
 	while(bCapture)// 退出标志
 	{
 		pkt.data = NULL;
@@ -126,7 +140,7 @@ void AudioCap::Run( )
 			//解码失败后，退出了线程，这里需要修复
 			av_frame_free(&frame);
 			av_log(NULL,AV_LOG_ERROR,"can not decoder a frame");
-			break;
+			//break;
 		}
 		av_free_packet(&pkt);
 
@@ -140,6 +154,7 @@ void AudioCap::Run( )
 			fifo_audio = av_audio_fifo_alloc(pFormatContext->streams[0]->codec->sample_fmt, 
 				pFormatContext->streams[0]->codec->channels, 30 * frame->nb_samples);
 		}
+		pts+=1152;
 		if(bStartRecord)
 		{
 			int buf_space = av_audio_fifo_space(fifo_audio);
@@ -173,6 +188,7 @@ void AudioCap::Run( )
 	}
 
 	bQuit = true;
+	evt_quit.set();
 	av_log(NULL,AV_LOG_ERROR,"video thread exit\r\n");
 
 }

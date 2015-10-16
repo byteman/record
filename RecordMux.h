@@ -8,8 +8,13 @@ class RecordMux
 public:
 	typedef std::vector<VideoCap*> VideoCapList; 
 	RecordMux();
+	~RecordMux();
 	int Init();
+	int GetNum();
 	int OpenCamera(const char* psDevName,int index,const unsigned  int width,
+													const unsigned  int height,
+													unsigned  int &FrameRate,AVPixelFormat format, Video_Callback pCbFunc);
+	int OpenCamera2(const char* psDevName,int index,const unsigned  int width,
 													const unsigned  int height,
 													unsigned  int &FrameRate,AVPixelFormat format, Video_Callback pCbFunc);
 

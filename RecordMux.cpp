@@ -86,8 +86,10 @@ int RecordMux::OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioIn
 		pVideoStream->codec->height = pVideoInfo->height; //输出文件视频流的高度
 		pVideoStream->codec->width  = pVideoCaps.size()*pVideoInfo->width;  //输出文件视频流的宽度
 		AVRational ar;
-		ar.den = 15;
+		ar.den = 10;
 		ar.num = 1;
+		//录像的帧率如果高于采集的帧率，则录像视频中有重复的视频帧
+		//录像的帧率如果低于采集的帧率，则录像视频中会丢弃采集的帧率，但是这种丢弃不是均匀化的，比如采集15fps，录制10fps，则呈现一个种，录制10帧丢最后的5帧.
 		pVideoStream->codec->time_base = pVideoCaps[0]->GetVideoTimeBase(); //输出文件视频流的高度和输入文件的时基一致.
 		pVideoStream->time_base = pVideoCaps[0]->GetVideoTimeBase();
 		pVideoStream->codec->sample_aspect_ratio = pVideoCaps[0]->Get_aspect_ratio();
@@ -229,6 +231,11 @@ RecordMux::RecordMux()
 	//pVideoCap = new VideoCap(0);
 	//pVideoCap2 = new VideoCap(1);
 	pAudioCap = new AudioCap();
+	
+	pVideoCaps.push_back(new VideoCap(pVideoCaps.size()));
+	pVideoCaps.push_back(new VideoCap(pVideoCaps.size()));
+
+
 	bStartRecord = false;
 	bCapture = false;
 	recordThreadQuit = true;
@@ -289,12 +296,21 @@ int RecordMux::Close()
 	for(int i = 0; i < pVideoCaps.size();i++)
 	{
 		pVideoCaps[i]->Close();
-		delete pVideoCaps[i];
 	}
-	
-	pVideoCaps.clear();
 
 	return 0;
+}
+RecordMux::~RecordMux()
+{
+	for(int i = 0; i < pVideoCaps.size();i++)
+	{
+		if(pVideoCaps[i]!=NULL)
+			pVideoCaps[i]->Close();
+		delete pVideoCaps[i];
+	}
+	pVideoCaps.clear();
+	if(pAudioCap) delete pAudioCap;
+	pAudioCap;
 }
 bool AudioFmtEqual(AVCodecContext *ctx1, AVCodecContext *ctx2)
 {
@@ -360,6 +376,8 @@ void RecordMux::Run()
 
 		if(av_compare_ts(cur_pts_v, pFmtContext->streams[VideoIndex]->codec->time_base, 
 			cur_pts_a,pFmtContext->streams[AudioIndex]->codec->time_base) <= 0)
+		//if(av_compare_ts(pVideoCaps[0]->GetPts(), pFmtContext->streams[VideoIndex]->codec->time_base, 
+		//	pAudioCap->GetPts(),pFmtContext->streams[AudioIndex]->codec->time_base) <= 0)
 		{
 
 			if( (pEncFrame = pVideoCaps[0]->GetSample()) != NULL )
@@ -369,7 +387,7 @@ void RecordMux::Run()
 				if(pVideoCaps[1] == NULL) pSecordFrame = NULL;
 				else
 				{
-					pSecordFrame = pVideoCaps[1]->GetLastSample();
+					pSecordFrame = pVideoCaps[1]->GetMatchFrame(pEncFrame->pts);
 				}
 				
 				
@@ -507,7 +525,27 @@ bool RecordMux::StartCap()
 	return true;
 }
 #include "CaptureDevices.h"
+int RecordMux::GetNum()
+{
+	return pVideoCaps.size();
+}
+int RecordMux::OpenCamera2(const char* psDevName,int index,const unsigned  int width,
+													const unsigned  int height,
+													unsigned  int &FrameRate,AVPixelFormat format, Video_Callback pCbFunc)
+{
+	int rt = 0;
+	if(pDShowInputFmt == NULL)Init();
 
+	
+	rt = pVideoCaps[1]->OpenPreview(psDevName,index,pDShowInputFmt,width,height,FrameRate, AV_PIX_FMT_YUV420P,format, pCbFunc);
+
+	if(rt != ERR_RECORD_OK) 
+	{
+		av_log(NULL,AV_LOG_ERROR,"open camera[1]->%s failed\r\n",psDevName);
+		return rt;
+	}
+	return ERR_RECORD_OK;
+}
 int RecordMux::OpenCamera(const char* psDevName,int index,const unsigned  int width,
 													const unsigned  int height,
 													unsigned  int &FrameRate,AVPixelFormat format, Video_Callback pCbFunc)
@@ -515,9 +553,8 @@ int RecordMux::OpenCamera(const char* psDevName,int index,const unsigned  int wi
 	int rt = 0;
 	if(pDShowInputFmt == NULL)Init();
 
-	VideoCap* pVideoCap = new VideoCap(pVideoCaps.size());
-	pVideoCaps.push_back(pVideoCap);
-	rt = pVideoCap->OpenPreview(psDevName,index,pDShowInputFmt,width,height,FrameRate, AV_PIX_FMT_YUV420P,format, pCbFunc);
+	
+	rt = pVideoCaps[0]->OpenPreview(psDevName,index,pDShowInputFmt,width,height,FrameRate, AV_PIX_FMT_YUV420P,format, pCbFunc);
 
 	if(rt != ERR_RECORD_OK) 
 	{

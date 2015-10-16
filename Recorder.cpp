@@ -143,6 +143,7 @@ CLOUDWALKFACESDK_API  int  SDK_CallMode   CloudWalk_OpenDevices2(
 		video2 = 1;
 	}
 	unsigned int fps = FrameRate;
+
 	ret = recMux.OpenCamera(pVideos[video1],video1,width,height,fps,AV_PIX_FMT_BGR24, video_callback);
 	if(ret != ERR_RECORD_OK)
 	{
@@ -150,7 +151,7 @@ CLOUDWALKFACESDK_API  int  SDK_CallMode   CloudWalk_OpenDevices2(
 		return ret;
 	}
 #if 1
-	ret = recMux.OpenCamera(pVideos[video2],video2,width,height,fps,AV_PIX_FMT_BGR24, video_callback);
+	ret = recMux.OpenCamera2(pVideos[video2],video2,width,height,fps,AV_PIX_FMT_BGR24, video_callback);
 	if(ret != ERR_RECORD_OK)
 	{
 		av_log(NULL,AV_LOG_ERROR,"OpenCamera failed\r\n");
@@ -195,7 +196,7 @@ int  SDK_CallMode   CloudWalk_OpenDevices(
 		return ret;
 	}
 #if 1
-	ret = recMux.OpenCamera(pVideoDevice2,-1,width,height,fps,AV_PIX_FMT_BGR24, video_callback);
+	ret = recMux.OpenCamera2(pVideoDevice2,-1,width,height,fps,AV_PIX_FMT_BGR24, video_callback);
 	if(ret != ERR_RECORD_OK)
 	{
 		av_log(NULL,AV_LOG_ERROR,"OpenCamera failed\r\n");

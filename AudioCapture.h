@@ -1,6 +1,6 @@
 #ifndef AUDIO_CAPTURE_H
 #define AUDIO_CAPTURE_H
-
+#include "Utils.h"
 int OpenAudioCapture(AVFormatContext** pFmtCtx, const char * psDevName, AVInputFormat *ifmt);
 
 class AudioCap{
@@ -14,6 +14,7 @@ public:
 	AVCodecContext* GetCodecContext();
 	int GetSample(void **data, int nb_samples);
 	int SimpleSize();
+	int GetPts(){return pts;}
 private:
 	AVFormatContext* pFormatContext;
 	AVCodecContext*  pCodecContext;
@@ -23,6 +24,8 @@ private:
 	bool bStartRecord;
 	SwsContext		 *sws_ctx;
 	CRITICAL_SECTION section;
-
+	Win32Event evt_ready;
+	Win32Event evt_quit; 
+	int pts;
 };
 #endif
