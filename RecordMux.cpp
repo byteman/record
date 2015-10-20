@@ -85,6 +85,7 @@ int RecordMux::OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioIn
 
 		pVideoStream->codec->height = pVideoInfo->height; //输出文件视频流的高度
 		pVideoStream->codec->width  = pVideoCaps.size()*pVideoInfo->width;  //输出文件视频流的宽度
+		//pVideoStream->codec->width  = pVideoInfo->width; 
 		AVRational ar;
 		ar.den = 10;
 		ar.num = 1;
@@ -367,6 +368,7 @@ void RecordMux::Run()
 	AVFrame* ptmp = NULL;
 	bStartRecord = true;
 	cur_pts_v = cur_pts_a = 0; //复位音视频的pts
+	DWORD video_time_stamp = 0;
 	VideoFrameIndex = AudioFrameIndex = 0; //复位音视频的帧序.
 	//MyFile file11("1.yuv");
 	//MyFile file22("2.yuv");
@@ -390,7 +392,8 @@ void RecordMux::Run()
 					pSecordFrame = pVideoCaps[1]->GetMatchFrame(pEncFrame->pts);
 				}
 				
-				
+				video_time_stamp = pEncFrame->pts;
+				//ptmp  = pEncFrame;
 				ptmp = MergeFrame(pEncFrame,pSecordFrame);
 				//file11.WriteFrame(pEncFrame);
 				//file22.WriteFrame(pSecordFrame);
@@ -439,9 +442,9 @@ void RecordMux::Run()
 					pFmtContext->streams[1]->codec->sample_rate,\
 					pFmtContext->streams[1]->codec->frame_size);
 				frame2 = frame;
-
+				DWORD timestamp = 0;
 				pAudioCap->GetSample((void **)frame->data, 
-					pFmtContext->streams[1]->codec->frame_size);
+					pFmtContext->streams[1]->codec->frame_size,timestamp);
 
 
 				if(!AudioFmtEqual(pFmtContext->streams[AudioIndex]->codec, pAudioCap->GetCodecContext()) )

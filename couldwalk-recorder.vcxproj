@@ -60,7 +60,7 @@
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>lib;F:\works\poco-1.6.1-all\poco-1.6.1-all\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>PocoFoundationmtd.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
       <Command>copy $(TargetPath) F:\works\ocx\ocx\证据保全\2015-10-12版\CloudWalkWebRecord\CloudWalkWebRecord\Release</Command>
@@ -88,6 +88,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="AudioCapture.h" />
+    <ClInclude Include="audio_fifo.h" />
     <ClInclude Include="CaptureDevices.h" />
     <ClInclude Include="FFScale.h" />
     <ClInclude Include="Filter.h" />
@@ -101,6 +102,9 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="AudioCapture.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="audio_fifo.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">NotUsing</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="CaptureDevices.cpp" />

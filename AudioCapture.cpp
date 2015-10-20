@@ -80,7 +80,7 @@ AudioCap::AudioCap()
 	fifo_audio = NULL;
 	InitializeCriticalSection(&section);
 	sws_ctx=NULL;
-	pts = 0;
+
 }
 int AudioCap::Open(const char * psDevName, AVInputFormat *ifmt)
 {
@@ -114,13 +114,16 @@ AVCodecContext* AudioCap::GetCodecContext()
 {
 	return pFormatContext->streams[0]->codec;
 }
+
+
+
 void AudioCap::Run( )
 {
 	AVPacket pkt;
 	AVFrame *frame;
 	bCapture = true;
 	evt_ready.set();
-	pts = 0;
+	
 	frame = av_frame_alloc();
 	int gotframe;
 	
@@ -151,14 +154,14 @@ void AudioCap::Run( )
 		//分配audio的fifo.
 		if (NULL == fifo_audio)
 		{
-			fifo_audio = av_audio_fifo_alloc(pFormatContext->streams[0]->codec->sample_fmt, 
+			fifo_audio = av_audio_fifo_alloc2(pFormatContext->streams[0]->codec->sample_fmt, 
 				pFormatContext->streams[0]->codec->channels, 30 * frame->nb_samples);
 		}
-		pts+=1152;
+		
 		if(bStartRecord)
 		{
-			int buf_space = av_audio_fifo_space(fifo_audio);
-			if (av_audio_fifo_space(fifo_audio) >= frame->nb_samples)
+			int buf_space = av_audio_fifo_space2(fifo_audio);
+			if (av_audio_fifo_space2(fifo_audio) >= frame->nb_samples)
 			{
 
 				av_log(NULL,AV_LOG_PANIC,"************write audio fifo\r\n");
@@ -166,7 +169,9 @@ void AudioCap::Run( )
 
 				//音频数据入录像队列.
 				EnterCriticalSection(&section);
-				av_audio_fifo_write(fifo_audio, (void **)frame->data, frame->nb_samples);
+				DWORD tick = GetTickCount();
+				//av_audio_fifo_write(fifo_audio, &tick, sizeof(tick), NULL);
+				av_audio_fifo_write2(fifo_audio, (void **)frame->data, frame->nb_samples);
 				LeaveCriticalSection(&section);
 				
 				
@@ -183,7 +188,7 @@ void AudioCap::Run( )
 
 	if(fifo_audio)
 	{
-		av_audio_fifo_free(fifo_audio);
+		av_audio_fifo_free2(fifo_audio);
 		fifo_audio = NULL;
 	}
 
@@ -200,21 +205,50 @@ bool AudioCap::StartRecord()
 int AudioCap::StopRecord()
 {
 	bStartRecord = false;
+	EnterCriticalSection(&section);
+	av_audio_fifo_reset2(fifo_audio);
+	LeaveCriticalSection(&section);
 	return 0;
 }
 int AudioCap::SimpleSize()
 {
-
-	return av_audio_fifo_size(fifo_audio);	
+	int size = 0;
+	EnterCriticalSection(&section);
+	size = av_audio_fifo_size2(fifo_audio);
+	LeaveCriticalSection(&section);
+	return 	size;
 }
-int AudioCap::GetSample(void **data, int nb_samples)
+int AudioCap::GetSample(void **data, int nb_samples,DWORD timestamp)
 {
 	int nRead = 0;
+	unsigned long tick = 0;
+	if(fifo_audio==NULL)return 0;
+#if 0
+	DWORD tick;
+	if(!GetTimeStamp(tick))
+	{
+		return 0;
+	}
+	if(timestamp > tick)
+	{
+		
+	}
+#endif
 	EnterCriticalSection(&section);
 			//从音频fifo中读取编码器需要的样本个数.
-	nRead = av_audio_fifo_read(fifo_audio, data, 
-		nb_samples);
+	nRead = av_audio_fifo_read2(fifo_audio, data, 
+		nb_samples,&timestamp);
 	LeaveCriticalSection(&section);
 
 	return nRead;
+}
+bool AudioCap::GetTimeStamp(DWORD &timeStamp)
+{
+	if(fifo_audio==NULL)return false;
+
+	if(SimpleSize() < 1) return false;
+	EnterCriticalSection(&section);
+	timeStamp = av_audio_peek_timestamp(fifo_audio);
+	LeaveCriticalSection(&section);
+	return true;
 }
