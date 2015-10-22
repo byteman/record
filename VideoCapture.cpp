@@ -33,7 +33,7 @@ int VideoCap::OpenVideoCapture(AVFormatContext** pFmtCtx, AVCodecContext	** pCod
 													const unsigned  int height,
 													unsigned  int &FrameRate,const char* fmt)
 {
-	int fps = 0;
+	//int fps = 0;
 	int idx = 0;
 
 	AVCodec* pCodec = NULL;
@@ -53,7 +53,7 @@ int VideoCap::OpenVideoCapture(AVFormatContext** pFmtCtx, AVCodecContext	** pCod
 	{
 		//return -6;
 	}
-
+	
 	fps = dshow_try_open_devices(pFmtCtx, dshow_path.c_str(),index, ifmt,info.pixel_format,info.width, info.height, info.fps);
 	
 	
@@ -127,6 +127,37 @@ DWORD WINAPI VideoCapThreadProc( LPVOID lpParam )
 	}
 	return 0;
 }
+AVFrame* VideoCap::GrabFrame()
+{
+	AVPacket packet;
+	static AVFrame	*pFrame = NULL;
+	int got_picture = 0;
+	if(pFrame == NULL)
+	{
+		pFrame = av_frame_alloc();
+	}
+	av_init_packet(&packet);
+	if (av_read_frame(pFormatContext, &packet) < 0)
+	{
+		return NULL;
+	}
+	if(packet.stream_index == VideoIndex)
+	{
+			//解码视频流 
+		if (avcodec_decode_video2(pCodecContext, pFrame, &got_picture, &packet) < 0)
+		{
+			av_log(NULL,AV_LOG_ERROR,"Camera[%d] Decode Error.\n",channel);
+			return NULL;
+		}
+		if (got_picture)
+		{				
+			sws_scale(record_sws_ctx, (const uint8_t* const*)pFrame->data, pFrame->linesize, 0, 
+							pFrame->height, pRecFrame->data, pRecFrame->linesize);
+			return pRecFrame;
+		}
+	}
+	return NULL;
+}
 /*
 该线程在设备被打开后，就被创建，一直到设备被关闭后，线程退出。
 在录像停止后，该线程仅仅采集视频并回调，但是并不推送数据到视频队列中.
@@ -137,10 +168,16 @@ void VideoCap::Run( )
 	int got_picture = 0;
 	int discard = 15;
 	bCapture = true;
+	int ret = 0;
+	total_fps = 0;
+	DWORD old_time  = GetTickCount();
+	DWORD start_time = old_time;
 	AVFrame	*pFrame; //存放从摄像头解码后得到的一帧数据.这个数据应该就是YUYV422，高度和宽度是预览的高度和宽度.
 	evt_ready.set();
 	pFrame = av_frame_alloc();//分配一个帧，用于解码输入视频流.
 	pts = 0;
+	test_fps = 0;
+	lost_fps = 0;
 	//分配一个Frame用作存放RGB24格式的预览视频.
 	AVFrame* pPreviewFrame = alloc_picture(AV_PIX_FMT_BGR24,pCodecContext->width, pCodecContext->height,16);
 
@@ -151,11 +188,29 @@ void VideoCap::Run( )
 		packet.data = NULL;
 		packet.size = 0;
 		
+		ret = av_read_frame(pFormatContext, &packet);
 		//从摄像头读取一 包数据，该数据未解码
-		if (av_read_frame(pFormatContext, &packet) < 0)
-		{
+		
+		if (ret == AVERROR(EAGAIN)) {
+			av_usleep(10000);
 			continue;
 		}
+		if (ret < 0) {
+			MessageBox(NULL,"error","read_frame failed",MB_OK);
+            bCapture = false;
+            break;
+        }
+		
+		int wait = (old_time+1000/fps) - GetTickCount();
+		total_fps++;
+		if(wait > 20)
+		{
+			lost_fps++;
+			//if(channel == 0)
+			//	continue;
+		}
+		test_fps++;
+		old_time = GetTickCount();
 		if(packet.stream_index == VideoIndex)
 		{
 			//解码视频流 
@@ -195,7 +250,7 @@ void VideoCap::Run( )
 #if 1
 					if (av_fifo_space(fifo_video) >= nSampleSize)
 					{
-						lost = 0;
+						//lost = 0;
 						EnterCriticalSection(&section);	
 						DWORD tick = GetTickCount();
 						av_fifo_generic_write(fifo_video, &tick, sizeof(tick), NULL);
@@ -209,7 +264,7 @@ void VideoCap::Run( )
 					else
 					{
 						
-						//av_log(NULL,AV_LOG_ERROR,"%d lost%d\r\n",channel,lost++);
+						av_log(NULL,AV_LOG_ERROR,"%d lost%d\r\n",channel,lost++);
 					}
 #else
 					EnterCriticalSection(&section);	
@@ -224,7 +279,9 @@ void VideoCap::Run( )
 		av_free_packet(&packet);
 		
 	}
-	av_log(NULL,AV_LOG_DEBUG,"camera[%d] stop capture thread\r\n ",channel);
+	int ticks = GetTickCount();
+	av_log(NULL,AV_LOG_ERROR,"time=%d,total_frame=%d,lost_frame=%d,test_frame=%d,need_frame=%d\r\n",ticks-start_time,total_fps,lost_fps,test_fps,(ticks-start_time)*fps/1000);
+	av_log(NULL,AV_LOG_ERROR,"camera[%d] stop capture thread test_fps=%d fps=%d \r\n ",channel,1000*test_fps/(ticks-start_time),fps);
 	if(pFrame)
 		av_frame_free(&pFrame);
 
@@ -383,6 +440,46 @@ AVFrame* VideoCap::PeekSample()
 	pRecFrame2->pts = tick;
 	return pRecFrame2;
 }
+AVFrame* VideoCap::GetAudioMatchFrame(DWORD audio_timestamp)
+{
+	DWORD timestamp2;
+	AVFrame* frame = NULL;
+	bool first = true;
+	AVFrame* prev_frame = NULL;
+	if(!GetTimeStamp(timestamp2))
+	{
+		//自己还没有数据包，返回上一个
+		return pRecFrame2;
+	}
+
+	do{
+		frame = GetSample();
+		if(frame != NULL)
+		{
+			prev_frame = frame;
+			if( audio_timestamp > frame->pts ) //找到时间戳匹配的帧
+			{
+				break;
+			}
+			else //自己的时间c小于另一路时间戳
+			{
+				
+			}
+		}
+		else
+		{
+			frame = prev_frame;
+			break;
+		}
+		first = false;
+		
+	}while( (frame!=NULL));
+
+	if(frame != NULL) return frame;
+
+	return pRecFrame2;
+
+}
 AVFrame* VideoCap::GetMatchFrame(DWORD timestamp)
 {
 	bool find = false;
@@ -486,7 +583,7 @@ int VideoCap::StartRecord(AVPixelFormat format, int width, int height)
 
 	nSampleSize = avpicture_get_size(format, width, height);
 	//申请30帧目标帧大小做video的fifo
-	fifo_video = av_fifo_alloc(30 * (nSampleSize+sizeof(DWORD)));
+	fifo_video = av_fifo_alloc(300 * (nSampleSize+sizeof(DWORD)));
 	if(fifo_video == NULL)
 	{
 		av_log(NULL,AV_LOG_ERROR,"alloc pic fifo failed\r\n");
@@ -499,6 +596,7 @@ int VideoCap::StartRecord(AVPixelFormat format, int width, int height)
 	y_size = width*height;
 	bStartRecord = true;
 	vts = 0;
+	pts = 0;
 	return 0;
 }
 int VideoCap::StopRecord()

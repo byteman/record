@@ -381,7 +381,7 @@ static int dshow_try_open_devices2(AVFormatContext	** ctx,const char* psDevName,
 	if(fps!=0)
 		av_dict_set_int(&options, "framerate", fps, NULL);
 	
-	av_dict_set_int(&options, "rtbufsize", width*height*3*(fps<=0?30:fps), NULL);
+	av_dict_set_int(&options, "rtbufsize", 5*width*height*3*(fps<=0?30:fps), NULL);
 	memset(buf,0,16);
 	_snprintf_s(buf,16,"%dx%d",width,height);
 	av_dict_set(&options, "video_size", buf, NULL);

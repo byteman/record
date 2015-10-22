@@ -86,9 +86,7 @@ int RecordMux::OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioIn
 		pVideoStream->codec->height = pVideoInfo->height; //输出文件视频流的高度
 		pVideoStream->codec->width  = pVideoCaps.size()*pVideoInfo->width;  //输出文件视频流的宽度
 		//pVideoStream->codec->width  = pVideoInfo->width; 
-		AVRational ar;
-		ar.den = 10;
-		ar.num = 1;
+		
 		//录像的帧率如果高于采集的帧率，则录像视频中有重复的视频帧
 		//录像的帧率如果低于采集的帧率，则录像视频中会丢弃采集的帧率，但是这种丢弃不是均匀化的，比如采集15fps，录制10fps，则呈现一个种，录制10帧丢最后的5帧.
 		pVideoStream->codec->time_base = pVideoCaps[0]->GetVideoTimeBase(); //输出文件视频流的高度和输入文件的时基一致.
@@ -369,6 +367,7 @@ void RecordMux::Run()
 	bStartRecord = true;
 	cur_pts_v = cur_pts_a = 0; //复位音视频的pts
 	DWORD video_time_stamp = 0;
+	DWORD audio_timestamp = 0;
 	VideoFrameIndex = AudioFrameIndex = 0; //复位音视频的帧序.
 	//MyFile file11("1.yuv");
 	//MyFile file22("2.yuv");
@@ -386,12 +385,13 @@ void RecordMux::Run()
 			{
 				int got_picture = 0;
 				AVPacket pkt;
+#if 1
 				if(pVideoCaps[1] == NULL) pSecordFrame = NULL;
 				else
 				{
 					pSecordFrame = pVideoCaps[1]->GetMatchFrame(pEncFrame->pts);
 				}
-				
+#endif			
 				video_time_stamp = pEncFrame->pts;
 				//ptmp  = pEncFrame;
 				ptmp = MergeFrame(pEncFrame,pSecordFrame);
@@ -410,6 +410,7 @@ void RecordMux::Run()
 				if(ret < 0)
 				{
 					//编码错误,不理会此帧
+					av_log(NULL,AV_LOG_ERROR,"encode err\r\n");
 					continue;
 				}
 				
@@ -417,13 +418,25 @@ void RecordMux::Run()
 				{
  					pkt.stream_index = VideoIndex;
 					//将编码后的包的Pts和dts，转换到输出文件中指定的时基 .在编码后就可以得出包的pts和dts.
-				
+					pkt.flags |= AV_PKT_FLAG_KEY;
+
 					av_packet_rescale_ts(&pkt, pFmtContext->streams[VideoIndex]->codec->time_base, pFmtContext->streams[VideoIndex]->time_base);
 				
 					//写入一个packet.
 					ret = av_interleaved_write_frame(pFmtContext, &pkt);
-
+					if(ret == 0)
+					{
+						//av_log(NULL,AV_LOG_ERROR,"video pts=%d\r\n",cur_pts_v);
+					}
+					else
+					{
+						av_log(NULL,AV_LOG_ERROR,"write video failed\r\n");
+					}
 					av_free_packet(&pkt);
+				}
+				else
+				{
+					av_log(NULL,AV_LOG_ERROR,"got  err\r\n");
 				}
 				
 			}
@@ -442,9 +455,9 @@ void RecordMux::Run()
 					pFmtContext->streams[1]->codec->sample_rate,\
 					pFmtContext->streams[1]->codec->frame_size);
 				frame2 = frame;
-				DWORD timestamp = 0;
+				
 				pAudioCap->GetSample((void **)frame->data, 
-					pFmtContext->streams[1]->codec->frame_size,timestamp);
+					pFmtContext->streams[1]->codec->frame_size,audio_timestamp);
 
 
 				if(!AudioFmtEqual(pFmtContext->streams[AudioIndex]->codec, pAudioCap->GetCodecContext()) )
@@ -484,10 +497,13 @@ void RecordMux::Run()
 					if(ret == 0)
 					{
 						//av_log(NULL,AV_LOG_PANIC,"write audio ok\r\n");
+					
+						//av_log(NULL,AV_LOG_ERROR,"audio pts=%d\r\n",cur_pts_v);
+					
 					}
 					else
 					{
-						av_log(NULL,AV_LOG_PANIC,"write audio failed\r\n");
+						av_log(NULL,AV_LOG_ERROR,"write audio failed\r\n");
 					}
 					
 					av_free_packet(&pkt_out);
@@ -499,7 +515,25 @@ void RecordMux::Run()
 				
 			}
 		}
+#if 0
+		if(!bStartRecord)
+		{
+			if(pAudioCap->SimpleSize()==0)
+			{
+				cur_pts_a = 0x7FFFFFFFFFFFFFF0;
+			}
+			if(pVideoCaps[0]->GetSample()==NULL)
+			{
+				cur_pts_v = 0x7FFFFFFFFFFFFFF0;
+			}
+			if( (pAudioCap->SimpleSize()==0) && pVideoCaps[0]->GetSample()==NULL)
+			{
+				break;
+			}
+		}
+#endif
 	}
+	av_log(NULL,AV_LOG_ERROR,"video pts=%d audio_pts\r\n",cur_pts_v,cur_pts_a);
 	if(pEnc_yuv420p_buf)
 	delete[] pEnc_yuv420p_buf;
 

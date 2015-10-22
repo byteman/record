@@ -164,7 +164,7 @@ void AudioCap::Run( )
 			if (av_audio_fifo_space2(fifo_audio) >= frame->nb_samples)
 			{
 
-				av_log(NULL,AV_LOG_PANIC,"************write audio fifo\r\n");
+				//av_log(NULL,AV_LOG_PANIC,"************write audio fifo\r\n");
 			
 
 				//音频数据入录像队列.

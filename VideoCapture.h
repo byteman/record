@@ -23,11 +23,13 @@ public:
 	bool GetTimeStamp(DWORD &timeStamp);
 
 	AVPixelFormat GetFormat();
+	AVFrame* GrabFrame();
 	AVFrame* GetSample();
 	AVFrame* PeekSample();
 	AVFrame* GetLastSample();
 	//查找与给定时间戳最匹配的视频帧，如果找不到就返回最后一帧.
 	AVFrame* GetMatchFrame(DWORD timestamp);
+	AVFrame* GetAudioMatchFrame(DWORD timestamp);
 	//启动录制，录制之前先要打开摄像头
 	int StartRecord(AVPixelFormat format, int width, int height);
 	//停止录制
@@ -69,5 +71,9 @@ private:
 	int pts;
 	int vts;
 	int lost;
+	int fps;
+	int test_fps;
+	int total_fps;
+	int lost_fps;
 };
 #endif
