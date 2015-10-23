@@ -172,6 +172,7 @@ void VideoCap::Run( )
 	bCapture = true;
 	int ret = 0;
 	total_fps = 0;
+	int64_t old_pts = 0;
 	DWORD old_time  = GetTickCount();
 	DWORD start_time = old_time;
 	AVFrame	*pFrame; //存放从摄像头解码后得到的一帧数据.这个数据应该就是YUYV422，高度和宽度是预览的高度和宽度.
@@ -197,16 +198,25 @@ void VideoCap::Run( )
 			//av_usleep(10000);
 			continue;
 		}
-		
-		
+		total_fps++;
+#if 0
+		if( ( packet.pts - old_pts ) < 1000/fps)
+		{
+			lost_fps++;
+			av_free_packet(&packet);
+			continue;
+		}
+#else
 		int wait = (old_time+1000/fps) - GetTickCount();
 		total_fps++;
-		if(wait > 500/fps)
+		if(wait > 0)
 		{
 			lost_fps++;
 			//if(channel == 0)
-				continue;
+			//av_free_packet(&packet);
+			//continue;
 		}
+#endif
 		test_fps++;
 		old_time = GetTickCount();
 		if(packet.stream_index == VideoIndex)

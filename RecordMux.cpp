@@ -211,7 +211,10 @@ int RecordMux::OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioIn
 
 	return 0;
 }
-
+AVCodecContext* RecordMux::GetCodecCtx()
+{
+	return pFmtContext->streams[VideoIndex]->codec;
+}
 
 //Â¼ÏñÏß³Ì.
 DWORD WINAPI RecordThreadProc( LPVOID lpParam )
@@ -353,7 +356,7 @@ AVFrame* RecordMux::MergeFrame(AVFrame* frame1, AVFrame* frame2)
 }
 int RecordMux::choose_output(void)
 {
-#if 1
+#if 0
  	AVRational r;
 	r.den = AV_TIME_BASE;
 	r.num = 1;
@@ -370,6 +373,14 @@ int RecordMux::choose_output(void)
 		return AudioIndex;
 #endif
  
+}
+static double rint(double x)
+{
+	return x >= 0 ? floor(x + 0.5) : ceil(x - 0.5);
+}
+static av_always_inline av_const long int lrint(double x)
+{
+	return rint(x);
 }
 void RecordMux::Run()
 {
@@ -389,8 +400,20 @@ void RecordMux::Run()
 		if(choose_output() == VideoIndex)
 		
 		{
-			if((pEncFrame = pVideoCaps[0]->GetAudioMatchFrame(0))!= NULL)
-			//if( (pEncFrame = pVideoCaps[0]->GetSample()) != NULL )
+			AVRational rate;
+			int nb_frames = 0;
+			int sync_opts = 0;
+			rate.num = 15;
+			rate.den = 1;
+
+			//double duration = 1/(av_q2d(rate) * av_q2d(GetCodecCtx()->time_base));
+			//double delta = 1 + duration;
+
+			
+			//cur_pts_v = lrint(cur_pts_v);
+
+			//if((pEncFrame = pVideoCaps[0]->GetAudioMatchFrame(0))!= NULL)
+			if( (pEncFrame = pVideoCaps[0]->GetSample()) != NULL )
 			{
 				int got_picture = 0;
 				AVPacket pkt;
@@ -451,6 +474,10 @@ void RecordMux::Run()
 				}
 				
 			}
+			else
+			{
+				
+			}
 		}
 		else
 		{	
@@ -465,8 +492,8 @@ void RecordMux::Run()
 				pkt_out.size = 0;
 
 				frame->pts = cur_pts_a;
+				
 				cur_pts_a+=pFmtContext->streams[AudioIndex]->codec->frame_size;
-
 				if (avcodec_encode_audio2(pFmtContext->streams[AudioIndex]->codec, &pkt_out, frame, &got_picture) < 0)
 				{
 					av_log(NULL,AV_LOG_ERROR,"can not decoder a frame");
@@ -482,7 +509,7 @@ void RecordMux::Run()
 						//av_log(NULL,AV_LOG_PANIC,"write audio ok\r\n");
 					
 						//av_log(NULL,AV_LOG_ERROR,"audio pts=%d\r\n",cur_pts_v);
-					
+						
 					}
 					else
 					{
@@ -499,7 +526,7 @@ void RecordMux::Run()
 			}
 		}
 	}
-	av_log(NULL,AV_LOG_ERROR,"video pts=%d audio_pts\r\n",cur_pts_v,cur_pts_a);
+	av_log(NULL,AV_LOG_ERROR,"video pts=%d audio_pts=%d\r\n",cur_pts_v,cur_pts_a/1152);
 	if(pEnc_yuv420p_buf)
 	delete[] pEnc_yuv420p_buf;
 

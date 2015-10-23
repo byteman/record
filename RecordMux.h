@@ -27,6 +27,7 @@ public:
 	bool StartCap();
 	
 private:
+	AVCodecContext* GetCodecCtx();
 	int OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioInfo* pAudioInfo,SubTitleInfo* pSubTitle);
 	AVFrame* MergeFrame(AVFrame* frame1, AVFrame* frame2);
 	int GetBestFps();
