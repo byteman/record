@@ -153,6 +153,8 @@ AVFrame* VideoCap::GrabFrame()
 		{				
 			sws_scale(record_sws_ctx, (const uint8_t* const*)pFrame->data, pFrame->linesize, 0, 
 							pFrame->height, pRecFrame->data, pRecFrame->linesize);
+			DWORD tick = GetTickCount();
+			pRecFrame->pts = tick;
 			return pRecFrame;
 		}
 	}
@@ -191,23 +193,19 @@ void VideoCap::Run( )
 		ret = av_read_frame(pFormatContext, &packet);
 		//从摄像头读取一 包数据，该数据未解码
 		
-		if (ret == AVERROR(EAGAIN)) {
-			av_usleep(10000);
+		if (ret < 0) {
+			//av_usleep(10000);
 			continue;
 		}
-		if (ret < 0) {
-			MessageBox(NULL,"error","read_frame failed",MB_OK);
-            bCapture = false;
-            break;
-        }
+		
 		
 		int wait = (old_time+1000/fps) - GetTickCount();
 		total_fps++;
-		if(wait > 20)
+		if(wait > 500/fps)
 		{
 			lost_fps++;
 			//if(channel == 0)
-			//	continue;
+				continue;
 		}
 		test_fps++;
 		old_time = GetTickCount();
@@ -457,7 +455,7 @@ AVFrame* VideoCap::GetAudioMatchFrame(DWORD audio_timestamp)
 		if(frame != NULL)
 		{
 			prev_frame = frame;
-			if( audio_timestamp > frame->pts ) //找到时间戳匹配的帧
+			if( audio_timestamp <= frame->pts ) //找到时间戳匹配的帧
 			{
 				break;
 			}

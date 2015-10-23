@@ -54,7 +54,7 @@ int OpenAudioCapture(AVFormatContext** pFmtCtx, const char * psDevName, AVInputF
 		av_log(NULL,AV_LOG_ERROR,"can not find or open audio decoder!\n");
 		return -4;
 	}
-
+	
 	
 
 	return 0;
@@ -80,6 +80,8 @@ AudioCap::AudioCap()
 	fifo_audio = NULL;
 	InitializeCriticalSection(&section);
 	sws_ctx=NULL;
+	pAudioFrame = NULL;
+	audio_swr_ctx = NULL;
 
 }
 int AudioCap::Open(const char * psDevName, AVInputFormat *ifmt)
@@ -92,11 +94,10 @@ int AudioCap::Open(const char * psDevName, AVInputFormat *ifmt)
 	}
 	bQuit	 = false;
 	
-	
 	ret = OpenAudioCapture(&pFormatContext,psDevName,ifmt);
-	
+
 	CreateThread( NULL, 0, AudioCapThreadProc, this, 0, NULL);
-	evt_ready.wait(10000);
+	//evt_ready.wait(10000);
 	return ret;
 }
 
@@ -116,7 +117,40 @@ AVCodecContext* AudioCap::GetCodecContext()
 }
 
 
-
+AVFrame* AudioCap::GrabFrame()
+{
+	AVPacket packet;
+	static AVFrame	*pFrame = NULL;
+	int gotframe = 0;
+	if(pFrame == NULL)
+	{
+		pFrame = av_frame_alloc();
+	}
+	while(1)
+	{
+		av_init_packet(&packet);
+		if (av_read_frame(pFormatContext, &packet) < 0)
+		{
+			return NULL;
+		}
+		//解码成指定的格式到pkt  fixme
+		if (avcodec_decode_audio4(pFormatContext->streams[0]->codec, pFrame, &gotframe, &packet) < 0)
+		{
+			//解码失败后，退出了线程，这里需要修复
+			av_frame_free(&pFrame);
+			av_log(NULL,AV_LOG_ERROR,"can not decoder a frame");
+			//break;
+			return NULL;
+		}
+		av_free_packet(&packet);
+		if (!gotframe)
+		{
+			continue;//没有获取到数据，继续下一次
+		}
+		break;
+	}
+	return pFrame;
+}
 void AudioCap::Run( )
 {
 	AVPacket pkt;
@@ -155,7 +189,7 @@ void AudioCap::Run( )
 		if (NULL == fifo_audio)
 		{
 			fifo_audio = av_audio_fifo_alloc2(pFormatContext->streams[0]->codec->sample_fmt, 
-				pFormatContext->streams[0]->codec->channels, 30 * frame->nb_samples);
+				pFormatContext->streams[0]->codec->channels, 300 * frame->nb_samples);
 		}
 		
 		if(bStartRecord)
@@ -163,18 +197,15 @@ void AudioCap::Run( )
 			int buf_space = av_audio_fifo_space2(fifo_audio);
 			if (av_audio_fifo_space2(fifo_audio) >= frame->nb_samples)
 			{
-
-				//av_log(NULL,AV_LOG_PANIC,"************write audio fifo\r\n");
-			
-
 				//音频数据入录像队列.
 				EnterCriticalSection(&section);
-				DWORD tick = GetTickCount();
-				//av_audio_fifo_write(fifo_audio, &tick, sizeof(tick), NULL);
+				//tickqueue.push_back(GetTickCount());
 				av_audio_fifo_write2(fifo_audio, (void **)frame->data, frame->nb_samples);
 				LeaveCriticalSection(&section);
-				
-				
+			}
+			else
+			{
+				av_log(NULL,AV_LOG_PANIC,"audio lost\r\n");
 			}
 		}
 		
@@ -197,6 +228,58 @@ void AudioCap::Run( )
 	av_log(NULL,AV_LOG_ERROR,"video thread exit\r\n");
 
 }
+//重采样音频包到目标格式.
+AVFrame* AudioCap::ReSampleFrame(AVFrame* pFrame)
+{
+	int dst_nb_samples;
+	//如果输入和输出的音频格式不一样 需要重采样，这里是一样的就没做
+	dst_nb_samples = av_rescale_rnd(swr_get_delay(audio_swr_ctx, pOutputCtx->sample_rate) + pFrame->nb_samples,
+		pOutputCtx->sample_rate, pOutputCtx->sample_rate, AV_ROUND_UP);
+
+	int ret = swr_convert(audio_swr_ctx,
+		pAudioFrame->data, dst_nb_samples,
+		(const uint8_t **)pFrame->data, pFrame->nb_samples);
+	return pAudioFrame;
+}
+bool AudioCap::NeedReSample(AVCodecContext *ctx1, AVCodecContext *ctx2)
+{
+
+	if (ctx1->sample_fmt != ctx2->sample_fmt 
+		|| ctx1->channels != ctx2->channels 
+		|| ctx1->sample_rate != ctx2->sample_rate)
+	{
+		return true;
+	}
+	return false;
+}
+bool AudioCap::StartRecord(AVCodecContext* pOutputCtx)
+{
+	
+	this->pOutputCtx = pOutputCtx;
+	pAudioFrame = alloc_audio_frame(pOutputCtx->sample_fmt,pOutputCtx->channel_layout,pOutputCtx->sample_rate,pOutputCtx->frame_size);
+	audio_swr_ctx = swr_alloc();
+	if (!audio_swr_ctx) {
+		av_log(NULL,AV_LOG_ERROR, "Could not allocate resampler context\n");
+		return false;
+	}
+	av_opt_set_int       (audio_swr_ctx, "in_channel_count",   GetCodecContext()->channels,       0);
+	av_opt_set_int       (audio_swr_ctx, "in_sample_rate",     GetCodecContext()->sample_rate,    0);
+	av_opt_set_sample_fmt(audio_swr_ctx, "in_sample_fmt",      GetCodecContext()->sample_fmt, 0);
+	av_opt_set_int       (audio_swr_ctx, "out_channel_count",  pOutputCtx->channels,       0);
+	av_opt_set_int       (audio_swr_ctx, "out_sample_rate",    pOutputCtx->sample_rate,    0);
+	av_opt_set_sample_fmt(audio_swr_ctx, "out_sample_fmt",     pOutputCtx->sample_fmt,     0);
+	/* initialize the resampling context */
+	if ((swr_init(audio_swr_ctx)) < 0) {
+		av_log(NULL,AV_LOG_ERROR, "Failed to initialize the resampling context\n");
+		return false;
+	}
+	pTmpFrame = alloc_audio_frame(GetCodecContext()->sample_fmt,\
+		pOutputCtx->channel_layout,\
+		pOutputCtx->sample_rate,\
+		pOutputCtx->frame_size);
+	bStartRecord = true;
+	return true;
+}
 bool AudioCap::StartRecord()
 {
 	bStartRecord = true;
@@ -218,37 +301,41 @@ int AudioCap::SimpleSize()
 	LeaveCriticalSection(&section);
 	return 	size;
 }
-int AudioCap::GetSample(void **data, int nb_samples,DWORD timestamp)
+AVFrame* AudioCap::GetAudioFrame()
+{
+	DWORD timeStamp = 0;
+	AVFrame* pFrame = NULL;
+	int nSize = pOutputCtx->frame_size > 0? pOutputCtx->frame_size:1024;
+	if(SimpleSize() < nSize) 
+		return NULL;
+
+	if(GetSample((void**)pTmpFrame->data,nSize,timeStamp) == 0) 
+		return NULL;
+	pFrame = pTmpFrame;
+	if(NeedReSample(pOutputCtx,GetCodecContext()))
+	{
+		pFrame = ReSampleFrame(pTmpFrame);
+	}
+	return pFrame;
+}
+int AudioCap::GetSample(void **data, int nb_samples,DWORD &timestamp)
 {
 	int nRead = 0;
 	unsigned long tick = 0;
 	if(fifo_audio==NULL)return 0;
-#if 0
-	DWORD tick;
-	if(!GetTimeStamp(tick))
-	{
-		return 0;
-	}
-	if(timestamp > tick)
-	{
-		
-	}
-#endif
+
 	EnterCriticalSection(&section);
 			//从音频fifo中读取编码器需要的样本个数.
 	nRead = av_audio_fifo_read2(fifo_audio, data, 
-		nb_samples,&timestamp);
+		nb_samples);
+	timestamp = tick;
 	LeaveCriticalSection(&section);
+
 
 	return nRead;
 }
 bool AudioCap::GetTimeStamp(DWORD &timeStamp)
 {
-	if(fifo_audio==NULL)return false;
+	return false;
 
-	if(SimpleSize() < 1) return false;
-	EnterCriticalSection(&section);
-	timeStamp = av_audio_peek_timestamp(fifo_audio);
-	LeaveCriticalSection(&section);
-	return true;
 }

@@ -133,8 +133,26 @@ int RecordMux::OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioIn
 
 		pOutputCodecCtx = pAudioStream->codec;
 
-		pOutputCodecCtx->sample_fmt = pOutputCodecCtx->codec->sample_fmts?pOutputCodecCtx->codec->sample_fmts[0]:AV_SAMPLE_FMT_FLTP; //输出的采样率等于采集的采样率
-		pOutputCodecCtx->bit_rate = 64000;//pAudioInfo->bitrate;
+		int i = 0;
+		bool find = false;
+		if(pOutputCodecCtx->codec->sample_fmts)
+		{
+			pOutputCodecCtx->sample_fmt = pOutputCodecCtx->codec->sample_fmts[0];
+			while(pOutputCodecCtx->codec->sample_fmts[i++] != -1)
+			{
+				if(pOutputCodecCtx->codec->sample_fmts[i] == pAudioCap->GetCodecContext()->sample_fmt )
+				{
+					pOutputCodecCtx->sample_fmt = pOutputCodecCtx->codec->sample_fmts[i];
+					break;
+				}
+			}
+		}
+		else
+		{
+			pOutputCodecCtx->sample_fmt = AV_SAMPLE_FMT_FLTP;
+		}
+		pOutputCodecCtx->sample_fmt = AV_SAMPLE_FMT_S16P;
+		pOutputCodecCtx->bit_rate = 192000;//pAudioInfo->bitrate;
 		pOutputCodecCtx->sample_rate = 44100;
 		if (pOutputCodecCtx->codec->supported_samplerates) {
             pOutputCodecCtx->sample_rate = pOutputCodecCtx->codec->supported_samplerates[0];
@@ -152,6 +170,8 @@ int RecordMux::OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioIn
             for (int i = 0; pOutputCodecCtx->codec->channel_layouts[i]; i++) {
                 if (pOutputCodecCtx->codec->channel_layouts[i] == AV_CH_LAYOUT_STEREO)
                     pOutputCodecCtx->channel_layout = AV_CH_LAYOUT_STEREO;
+				//if (pOutputCodecCtx->codec->channel_layouts[i] == pAudioCap->GetCodecContext()->channel_layout)
+				//	pOutputCodecCtx->channel_layout = pAudioCap->GetCodecContext()->channel_layout;
             }
         }
 	
@@ -171,24 +191,6 @@ int RecordMux::OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioIn
 			av_log(NULL,AV_LOG_ERROR,"can not open output codec!\n");
 			return -5;
 		}
-		pAudioFrame = alloc_audio_frame(pAudioStream->codec->sample_fmt,pAudioStream->codec->channel_layout,pAudioStream->codec->sample_rate,pAudioStream->codec->frame_size);
-		audio_swr_ctx = swr_alloc();
-        if (!audio_swr_ctx) {
-            av_log(NULL,AV_LOG_ERROR, "Could not allocate resampler context\n");
-            return -9;
-        }
-		av_opt_set_int       (audio_swr_ctx, "in_channel_count",   pAudioCap->GetCodecContext()->channels,       0);
-        av_opt_set_int       (audio_swr_ctx, "in_sample_rate",     pAudioCap->GetCodecContext()->sample_rate,    0);
-		av_opt_set_sample_fmt(audio_swr_ctx, "in_sample_fmt",      pAudioCap->GetCodecContext()->sample_fmt, 0);
-        av_opt_set_int       (audio_swr_ctx, "out_channel_count",  pAudioStream->codec->channels,       0);
-        av_opt_set_int       (audio_swr_ctx, "out_sample_rate",    pAudioStream->codec->sample_rate,    0);
-        av_opt_set_sample_fmt(audio_swr_ctx, "out_sample_fmt",     pAudioStream->codec->sample_fmt,     0);
-
-        /* initialize the resampling context */
-        if ((swr_init(audio_swr_ctx)) < 0) {
-            av_log(NULL,AV_LOG_ERROR, "Failed to initialize the resampling context\n");
-            return -10;
-        }
 	}
 	//打开文件
 	if (!(pFmtContext->oformat->flags & AVFMT_NOFILE))
@@ -227,8 +229,7 @@ RecordMux::RecordMux()
 {
 	InitializeCriticalSection(&VideoSection);
 	pVideoCaps.clear();
-	//pVideoCap = new VideoCap(0);
-	//pVideoCap2 = new VideoCap(1);
+
 	pAudioCap = new AudioCap();
 	
 	pVideoCaps.push_back(new VideoCap(pVideoCaps.size()));
@@ -248,7 +249,7 @@ RecordMux::RecordMux()
 */
 int RecordMux::Start(const char* filePath,VideoInfo* pVideoInfo, AudioInfo* pAudioInfo,SubTitleInfo* pSubTitle)
 {
-	
+	if(bStartRecord) return 0;
 	int ret = OpenOutPut(filePath,pVideoInfo,pAudioInfo,pSubTitle);
 	for(int i = 0; i< pVideoCaps.size();i++)
 	{
@@ -257,7 +258,8 @@ int RecordMux::Start(const char* filePath,VideoInfo* pVideoInfo, AudioInfo* pAud
 	
 	pRecFrame = alloc_picture(AV_PIX_FMT_YUV420P,pVideoInfo->width*2,pVideoInfo->height,16);
 
-	pAudioCap->StartRecord();
+	//pAudioCap->StartRecord();
+	pAudioCap->StartRecord(pFmtContext->streams[AudioIndex]->codec);
 	CreateThread( NULL, 0, RecordThreadProc, this, 0, NULL);
 	return ret;
 }
@@ -311,17 +313,6 @@ RecordMux::~RecordMux()
 	if(pAudioCap) delete pAudioCap;
 	pAudioCap;
 }
-bool AudioFmtEqual(AVCodecContext *ctx1, AVCodecContext *ctx2)
-{
-	
-	if (ctx1->sample_fmt != ctx2->sample_fmt 
-					|| ctx1->channels != ctx2->channels 
-					|| ctx1->sample_rate != ctx2->sample_rate)
-	{
-		return false;
-	}
-	return true;
-}
 
 AVFrame* RecordMux::MergeFrame(AVFrame* frame1, AVFrame* frame2)
 {
@@ -360,6 +351,26 @@ AVFrame* RecordMux::MergeFrame(AVFrame* frame1, AVFrame* frame2)
 	return pRecFrame;
 
 }
+int RecordMux::choose_output(void)
+{
+#if 1
+ 	AVRational r;
+	r.den = AV_TIME_BASE;
+	r.num = 1;
+    int64_t opts = av_rescale_q(pFmtContext->streams[VideoIndex]->cur_dts, pFmtContext->streams[VideoIndex]->time_base,r);
+    int64_t opts2 = av_rescale_q(pFmtContext->streams[AudioIndex]->cur_dts, pFmtContext->streams[AudioIndex]->time_base,r);
+   
+	if(opts < opts2) return VideoIndex;
+	else return AudioIndex;
+#else
+	if(av_compare_ts(cur_pts_v, pFmtContext->streams[VideoIndex]->codec->time_base, 
+		cur_pts_a,pFmtContext->streams[AudioIndex]->codec->time_base) <= 0)
+		return VideoIndex;
+	else 
+		return AudioIndex;
+#endif
+ 
+}
 void RecordMux::Run()
 {
 	AVFrame* pSecordFrame = NULL;
@@ -375,13 +386,11 @@ void RecordMux::Run()
 	while(bStartRecord) //启动了录像标志，才进行录像，否则退出线程
 	{
 
-		if(av_compare_ts(cur_pts_v, pFmtContext->streams[VideoIndex]->codec->time_base, 
-			cur_pts_a,pFmtContext->streams[AudioIndex]->codec->time_base) <= 0)
-		//if(av_compare_ts(pVideoCaps[0]->GetPts(), pFmtContext->streams[VideoIndex]->codec->time_base, 
-		//	pAudioCap->GetPts(),pFmtContext->streams[AudioIndex]->codec->time_base) <= 0)
+		if(choose_output() == VideoIndex)
+		
 		{
-
-			if( (pEncFrame = pVideoCaps[0]->GetSample()) != NULL )
+			if((pEncFrame = pVideoCaps[0]->GetAudioMatchFrame(0))!= NULL)
+			//if( (pEncFrame = pVideoCaps[0]->GetSample()) != NULL )
 			{
 				int got_picture = 0;
 				AVPacket pkt;
@@ -423,7 +432,9 @@ void RecordMux::Run()
 					av_packet_rescale_ts(&pkt, pFmtContext->streams[VideoIndex]->codec->time_base, pFmtContext->streams[VideoIndex]->time_base);
 				
 					//写入一个packet.
+					//av_log(NULL,AV_LOG_ERROR,"video cur_dts=%d\r\n",pFmtContext->streams[VideoIndex]->cur_dts);
 					ret = av_interleaved_write_frame(pFmtContext, &pkt);
+					//av_log(NULL,AV_LOG_ERROR,"video cur_dts=%d\r\n",pFmtContext->streams[VideoIndex]->cur_dts);
 					if(ret == 0)
 					{
 						//av_log(NULL,AV_LOG_ERROR,"video pts=%d\r\n",cur_pts_v);
@@ -442,37 +453,11 @@ void RecordMux::Run()
 			}
 		}
 		else
-		{
-
-			if(pAudioCap->SimpleSize() >= 
-				(pFmtContext->streams[AudioIndex]->codec->frame_size > 0 ? pFmtContext->streams[AudioIndex]->codec->frame_size : 1024))
+		{	
+			AVFrame *frame = pAudioCap->GetAudioFrame();
+			if(frame != NULL)
 			{
 
-				AVFrame *frame;
-				AVFrame *frame2;
-				frame = alloc_audio_frame(pAudioCap->GetCodecContext()->sample_fmt,\
-					pFmtContext->streams[1]->codec->channel_layout,\
-					pFmtContext->streams[1]->codec->sample_rate,\
-					pFmtContext->streams[1]->codec->frame_size);
-				frame2 = frame;
-				
-				pAudioCap->GetSample((void **)frame->data, 
-					pFmtContext->streams[1]->codec->frame_size,audio_timestamp);
-
-
-				if(!AudioFmtEqual(pFmtContext->streams[AudioIndex]->codec, pAudioCap->GetCodecContext()) )
-				{
-					int dst_nb_samples;
-					//如果输入和输出的音频格式不一样 需要重采样，这里是一样的就没做
-					dst_nb_samples = av_rescale_rnd(swr_get_delay(audio_swr_ctx, pFmtContext->streams[AudioIndex]->codec->sample_rate) + frame->nb_samples,
-									pFmtContext->streams[AudioIndex]->codec->sample_rate, pFmtContext->streams[AudioIndex]->codec->sample_rate, AV_ROUND_UP);
-					 
-					int ret = swr_convert(audio_swr_ctx,
-						pAudioFrame->data, dst_nb_samples,
-						(const uint8_t **)frame->data, frame->nb_samples);
-					frame = pAudioFrame;
-				}
-			
 				AVPacket pkt_out;
 				av_init_packet(&pkt_out);
 				int got_picture = -1;
@@ -486,8 +471,6 @@ void RecordMux::Run()
 				{
 					av_log(NULL,AV_LOG_ERROR,"can not decoder a frame");
 				}
-				if(frame2)
-					av_frame_free(&frame2);
 				if (got_picture) 
 				{
 					pkt_out.stream_index = AudioIndex; //千万要记得加这句话，否则会导致没有音频流.
@@ -510,28 +493,11 @@ void RecordMux::Run()
 				}
 				else
 				{
-					//av_log(NULL,AV_LOG_PANIC,"xxxxxxxxxxxxxwrite audio file failed\r\n");
+					av_log(NULL,AV_LOG_PANIC,"xxxxxxxxxxxxxwrite audio file failed\r\n");
 				}
 				
 			}
 		}
-#if 0
-		if(!bStartRecord)
-		{
-			if(pAudioCap->SimpleSize()==0)
-			{
-				cur_pts_a = 0x7FFFFFFFFFFFFFF0;
-			}
-			if(pVideoCaps[0]->GetSample()==NULL)
-			{
-				cur_pts_v = 0x7FFFFFFFFFFFFFF0;
-			}
-			if( (pAudioCap->SimpleSize()==0) && pVideoCaps[0]->GetSample()==NULL)
-			{
-				break;
-			}
-		}
-#endif
 	}
 	av_log(NULL,AV_LOG_ERROR,"video pts=%d audio_pts\r\n",cur_pts_v,cur_pts_a);
 	if(pEnc_yuv420p_buf)
@@ -554,11 +520,13 @@ void RecordMux::Run()
 }
 bool RecordMux::StartCap()
 {
+#if 1
 	for(int i = 0; i < pVideoCaps.size();i++)
 	{
 		pVideoCaps[i]->Start();
-		
+
 	}
+#endif
 	return true;
 }
 #include "CaptureDevices.h"

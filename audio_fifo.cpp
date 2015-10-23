@@ -137,8 +137,7 @@ int av_audio_fifo_write2(AVAudioFifo2 *af, void **data, int nb_samples)
 
     size = nb_samples * af->sample_size;
 	//add timestamp
-	unsigned long tick = GetTickCount();
-	av_fifo_generic_write(af->buf[0], &tick, sizeof(unsigned long), NULL);
+
 
     for (i = 0; i < af->nb_buffers; i++) {
         ret = av_fifo_generic_write(af->buf[i], data[i], size, NULL);
@@ -150,7 +149,7 @@ int av_audio_fifo_write2(AVAudioFifo2 *af, void **data, int nb_samples)
     return nb_samples;
 }
 
-int av_audio_fifo_read2(AVAudioFifo2 *af, void **data, int nb_samples,unsigned long *timeStamp)
+int av_audio_fifo_read2(AVAudioFifo2 *af, void **data, int nb_samples)
 {
     int i, ret, size;
 
@@ -161,7 +160,7 @@ int av_audio_fifo_read2(AVAudioFifo2 *af, void **data, int nb_samples,unsigned l
         return 0;
 
     size = nb_samples * af->sample_size;
-	av_fifo_generic_read(af->buf[0], timeStamp, sizeof(unsigned long), NULL);
+	
     for (i = 0; i < af->nb_buffers; i++) {
         if ((ret = av_fifo_generic_read(af->buf[i], data[i], size, NULL)) < 0)
             return AVERROR_BUG;

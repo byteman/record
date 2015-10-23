@@ -11,6 +11,7 @@ public:
 	~RecordMux();
 	int Init();
 	int GetNum();
+	int choose_output(void);
 	int OpenCamera(const char* psDevName,int index,const unsigned  int width,
 													const unsigned  int height,
 													unsigned  int &FrameRate,AVPixelFormat format, Video_Callback pCbFunc);

@@ -112,7 +112,7 @@ int av_audio_fifo_write2(AVAudioFifo2 *af, void **data, int nb_samples);
  *                    be greater than nb_samples, and will only be less than
  *                    nb_samples if av_audio_fifo_size is less than nb_samples.
  */
-int av_audio_fifo_read2(AVAudioFifo2 *af, void **data, int nb_samples,unsigned long *timeStamp);
+int av_audio_fifo_read2(AVAudioFifo2 *af, void **data, int nb_samples);
 
 /**
  * Drain data from an AVAudioFifo.
