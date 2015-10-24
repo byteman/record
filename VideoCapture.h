@@ -3,7 +3,6 @@
 
 #include "Recorder.h"
 #include "Utils.h"
-#include "Poco\Event.h"
 
 class VideoCap{
 public:
@@ -34,17 +33,19 @@ public:
 	int StartRecord(AVPixelFormat format, int width, int height);
 	//停止录制
 	int StopRecord();
-	//启动采集线程.
-	int Start();
+	
 	int Stop();
 	int GetPts(){return pts;}
 private:
-
+	//启动采集线程.
+	int Start();
 	int OpenVideoCapture(AVFormatContext** pFmtCtx, AVCodecContext	** pCodecCtx,const char* psDevName,int index,AVInputFormat *ifmt,const unsigned  int width,
 													const unsigned  int height,
 													unsigned  int &FrameRate,const char* fmt);
 	AVFormatContext* pFormatContext;
 	AVCodecContext*  pCodecContext;
+
+	bool bOpen;
 	bool bCapture;
 	bool bQuit;
 	bool bStartRecord;

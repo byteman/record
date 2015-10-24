@@ -24,9 +24,10 @@ public:
 	int Stop();
 	void Run();
 	int Close();
-	bool StartCap();
+	
 	
 private:
+	bool StartCap();
 	AVCodecContext* GetCodecCtx();
 	int OpenOutPut(const char* outFileName,VideoInfo* pVideoInfo, AudioInfo* pAudioInfo,SubTitleInfo* pSubTitle);
 	AVFrame* MergeFrame(AVFrame* frame1, AVFrame* frame2);

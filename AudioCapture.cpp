@@ -33,7 +33,8 @@ int OpenAudioCapture(AVFormatContext** pFmtCtx, const char * psDevName, AVInputF
 	//以Direct Show的方式打开设备，并将 输入方式 关联到格式上下文
 	//char * psDevName = dup_wchar_to_utf8(L"audio=麦克风 (Realtek High Definition Au");
 	//char * psDevName = dup_wchar_to_utf8(L"audio=麦克风 (2- USB Audio Device)");
-	if (avformat_open_input(pFmtCtx, psDevName, ifmt,NULL) < 0)
+	std::string dshow_path = getDevicePath("audio",psDevName);
+	if (avformat_open_input(pFmtCtx, dshow_path.c_str(), ifmt,NULL) < 0)
 	{
 		av_log(NULL,AV_LOG_ERROR,"Couldn't open input stream.（无法打开音频输入流）\n");
 		return -1;
@@ -95,7 +96,7 @@ int AudioCap::Open(const char * psDevName, AVInputFormat *ifmt)
 	bQuit	 = false;
 	
 	ret = OpenAudioCapture(&pFormatContext,psDevName,ifmt);
-
+	if(ret != 0) return ret;
 	CreateThread( NULL, 0, AudioCapThreadProc, this, 0, NULL);
 	//evt_ready.wait(10000);
 	return ret;

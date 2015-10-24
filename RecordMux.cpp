@@ -6,6 +6,7 @@ extern "C"
 #include "libavformat/avformat.h"
 #include "libswscale/swscale.h"
 #include "libavdevice/avdevice.h"
+#include "libavutil/time.h"
 #include "libavutil/audio_fifo.h"
 #include "libswresample/swresample.h"
 #include "libavfilter/avfiltergraph.h" 
@@ -394,6 +395,9 @@ void RecordMux::Run()
 	//MyFile file11("1.yuv");
 	//MyFile file22("2.yuv");
 	//MyFile file33("12.yuv");
+	   int64_t start_time;
+    start_time = av_gettime_relative();
+
 	while(bStartRecord) //启动了录像标志，才进行录像，否则退出线程
 	{
 
@@ -413,10 +417,19 @@ void RecordMux::Run()
 			//cur_pts_v = lrint(cur_pts_v);
 
 			//if((pEncFrame = pVideoCaps[0]->GetAudioMatchFrame(0))!= NULL)
-			if( (pEncFrame = pVideoCaps[0]->GetSample()) != NULL )
+			//强行将帧率高的摄像头帧率降低，然后调用GetLastSample函数来达到同步效果，就像我家里的5fps的摄像头.
+			if( (pEncFrame = pVideoCaps[0]->GetLastSample()) != NULL )
 			{
 				int got_picture = 0;
 				AVPacket pkt;
+				AVRational base;
+				base.den = AV_TIME_BASE;
+				base.num = 1;
+				int64_t fps = av_rescale_q( (av_gettime_relative() - start_time) ,base, GetCodecCtx()->time_base);
+				if(cur_pts_v > fps)
+				{
+					continue;
+				}
 #if 1
 				if(pVideoCaps[1] == NULL) pSecordFrame = NULL;
 				else
@@ -547,7 +560,7 @@ void RecordMux::Run()
 }
 bool RecordMux::StartCap()
 {
-#if 1
+#if 0
 	for(int i = 0; i < pVideoCaps.size();i++)
 	{
 		pVideoCaps[i]->Start();

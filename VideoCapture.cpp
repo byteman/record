@@ -334,7 +334,7 @@ int VideoCap::OpenPreview(const char* psDevName,int index,AVInputFormat *ifmt,co
 		av_log(NULL,AV_LOG_ERROR,"SetCallBackAttr failed\r\n");
 		return ERR_RECORD_VIDEO_OPEN;
 	}
-	
+	Start();
 	return ret;
 }
 int VideoCap::Start()
@@ -380,6 +380,7 @@ int VideoCap::Close()
 	{
 		return ERR_RECORD_OK;
 	}
+	
 	bCapture = false;
 	if(!evt_quit.wait(1000))return ERR_RECORD_VIDEO_OPEN;
 	//evt_quit.wait(1000);

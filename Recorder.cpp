@@ -168,7 +168,7 @@ CLOUDWALKFACESDK_API  int  SDK_CallMode   CloudWalk_OpenDevices2(
 		av_log(NULL,AV_LOG_ERROR,"OpenAudio failed\r\n");
 		return ret;
 	}
-	recMux.StartCap();
+	///recMux.StartCap();
 	return 0;
 }
 
@@ -188,7 +188,13 @@ int  SDK_CallMode   CloudWalk_OpenDevices(
 	unsigned int fps = FrameRate;
 	av_log(NULL,AV_LOG_ERROR,"CloudWalk_OpenDevices vidoe=%s,audio=%s width=%d height=%d framerate=%d\r\n",\
 			pVideoDevice,pAudioDevice,width,height,FrameRate);
-
+	//打开音频设备要放在打开视频设备的前面，否则在我家里的电脑上音频设备会打不开.
+	ret = recMux.OpenAudio(pAudioDevice);
+	if(ret != ERR_RECORD_OK)
+	{
+		av_log(NULL,AV_LOG_ERROR,"OpenAudio failed\r\n");
+		return ERR_RECORD_AUDIO_OPEN;
+	}
 	ret = recMux.OpenCamera(pVideoDevice,-1,width,height,fps,AV_PIX_FMT_BGR24, video_callback);
 	if(ret != ERR_RECORD_OK)
 	{
@@ -203,13 +209,8 @@ int  SDK_CallMode   CloudWalk_OpenDevices(
 		return ret;
 	}
 #endif
-	ret = recMux.OpenAudio(getDevicePath("audio",pAudioDevice).c_str());
-	if(ret != ERR_RECORD_OK)
-	{
-		av_log(NULL,AV_LOG_ERROR,"OpenAudio failed\r\n");
-		return ret;
-	}
-	recMux.StartCap();
+	
+	//recMux.StartCap();
 
 	return 0;
 

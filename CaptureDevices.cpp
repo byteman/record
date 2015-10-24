@@ -202,9 +202,9 @@ HRESULT CaptureDevices::ListDevices(const char* name, int skip)
 		{
 			goto fail1;
 		}
-	
-		buf = dup_wchar_to_utf8(var.bstrVal);
-		if(strcmp(buf,name))
+		if(ws2s(var.bstrVal) != std::string(name))
+		//buf = dup_wchar_to_utf8(var.bstrVal);
+		//if(strcmp(buf,name))
 		{
 			goto fail1;
 		}
@@ -220,7 +220,8 @@ fail1:
 		
     }
 	classenum->Release();
-	dshow_cycle_pins(NULL,(enum dshowDeviceType)0,device_filter,NULL,name);
+	if(device_filter!=NULL)
+		dshow_cycle_pins(NULL,(enum dshowDeviceType)0,device_filter,NULL,name);
 	if(device_filter)
 		device_filter->Release();
 	devenum->Release();
