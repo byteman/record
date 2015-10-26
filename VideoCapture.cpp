@@ -415,8 +415,9 @@ AVFrame* VideoCap::GetLastSample()
 
 	frame = GetSample();
 
-	if(frame != NULL) return frame;
-
+	if(frame != NULL) 
+		return frame;
+	//if(pRecFrame2->pts == 0) return NULL;
 	return pRecFrame2;
 }
 AVFrame* VideoCap::PeekSample()
@@ -531,7 +532,7 @@ AVFrame* VideoCap::GetMatchFrame(DWORD timestamp)
 	}while( (frame!=NULL));
 
 	if(frame != NULL) return frame;
-
+	//if(pRecFrame2->pts == 0) return NULL;
 	return pRecFrame2;
 }
 bool VideoCap::GetTimeStamp(DWORD &timeStamp)
@@ -601,7 +602,9 @@ int VideoCap::StartRecord(AVPixelFormat format, int width, int height)
 	
 	pRecFrame = alloc_picture(format,width,height,16);//AV_PIX_FMT_YUV420P
 	pRecFrame2= alloc_picture(format,width,height,16);//AV_PIX_FMT_YUV420P
-
+	pRecFrame2->pts = 0;
+	fill_black_color(pRecFrame);
+	fill_black_color(pRecFrame2);
 	y_size = width*height;
 	bStartRecord = true;
 	vts = 0;

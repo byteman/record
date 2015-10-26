@@ -395,6 +395,7 @@ void RecordMux::Run()
 	//MyFile file11("1.yuv");
 	//MyFile file22("2.yuv");
 	//MyFile file33("12.yuv");
+	
 	   int64_t start_time;
     start_time = av_gettime_relative();
 
@@ -425,6 +426,8 @@ void RecordMux::Run()
 				AVRational base;
 				base.den = AV_TIME_BASE;
 				base.num = 1;
+				//file11.WriteFrame(pEncFrame);
+				
 				int64_t fps = av_rescale_q( (av_gettime_relative() - start_time) ,base, GetCodecCtx()->time_base);
 				if(cur_pts_v > fps)
 				{

@@ -286,6 +286,13 @@ AVFrame *alloc_picture(enum AVPixelFormat pix_fmt, int width, int height, int al
 
     return picture;
 }
+void fill_black_color(AVFrame * frame)
+{
+	if(frame==NULL) return;
+	memset(frame->data[0],0,frame->width*frame->height);
+	memset(frame->data[1],0x80,frame->width*frame->height/4);
+	memset(frame->data[2],0x80,frame->width*frame->height/4);
+}
 AVFrame *alloc_audio_frame(enum AVSampleFormat sample_fmt,
                                   uint64_t channel_layout,
                                   int sample_rate, int nb_samples)
@@ -534,6 +541,7 @@ int MyFile::WriteFrame(AVFrame* frame)
 int  MyFile::WriteBuffer(void* buffer, int size)
 {
 	return fwrite(buffer,size,1,_fp);
+	//return fwrite(buffer,1,size,_fp);
 }
 int  MyFile::WriteRGB24(AVFrame* frame)
 {
@@ -542,11 +550,12 @@ int  MyFile::WriteRGB24(AVFrame* frame)
 int  MyFile::WriteYUV420P(AVFrame* frame)
 {
 	int y_size = frame->width*frame->height;
+	int size = y_size+y_size/4+y_size/4;
 	int ret = 0;
 	ret += WriteBuffer(frame->data[0], y_size);
 	ret += WriteBuffer(frame->data[1], y_size/4);
 	ret += WriteBuffer(frame->data[2], y_size/4);
-
+	//Close();
 	return ret;
 
 }

@@ -13,6 +13,7 @@ AVFrame *alloc_picture(enum AVPixelFormat pix_fmt, int width, int height, int al
 AVFrame *alloc_audio_frame(enum AVSampleFormat sample_fmt,
                                   uint64_t channel_layout,
                                   int sample_rate, int nb_samples);
+void fill_black_color(AVFrame * frame);
 std::string ws2s(const std::wstring& ws);
 std::wstring s2ws(const std::string& s);
 std::string getDevicePath(const char* pDevType, const char* pDevName);
